@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: #0e0f11;
+  color: #e8e6e1;
+  min-height: 100vh;
+}
+
+:root {
+  --accent: #4f8ef7;
+  --accent-dim: rgba(79,142,247,0.15);
+  --border: rgba(255,255,255,0.08);
+  --surface: #16181c;
+  --surface-raised: #1c1f25;
+  --text-primary: #e8e6e1;
+  --text-secondary: #8a8880;
+  --red: #e05c5c;
+  --amber: #e09a3a;
+  --green: #4caf78;
+}
