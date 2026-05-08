@@ -15,43 +15,62 @@ export function useDashboard() {
       const resources = await api.resources();
       const sla       = await api.sla();
 
-      // Shape data to match what the dashboard modules expect
-      const now = new Date();
-      const allTickets = tickets.summary.items || [];
-      const openTickets = tickets.open.items || [];
+      const excludeResources = tickets.excludeResources || [];
 
+      // Build resource map excluding API users (licenseType 7) and excluded resources
+      const resourceMap = {};
+      (resources.resources || [])
+        .filter(r => r.licenseType !== 7 && !excludeResources.includes(r.id))
+        .forEach(r => { resourceMap[r.id] = r.name; });
+
+      // Volume by month from summary tickets
       const byMonth = {};
-      allTickets.forEach(t => {
+      (tickets.summary.items || []).forEach(t => {
         const month = t.createDate?.substring(0, 7);
         if (month) byMonth[month] = (byMonth[month] || 0) + 1;
       });
 
-      const withAge = openTickets.map(t => ({
-        ...t,
-        ageInDays: Math.floor((now - new Date(t.createDate)) / (1000 * 60 * 60 * 24))
-      }));
-
-      const avgAge = withAge.length
-        ? (withAge.reduce((s, t) => s + t.ageInDays, 0) / withAge.length).toFixed(1)
-        : 0;
+      // Open tickets - exclude unassigned and excluded resources
+      const openTickets = (tickets.open.items || []).filter(
+        t => t.assignedResourceID && !excludeResources.includes(t.assignedResourceID)
+      );
 
       const byTech = {};
-      withAge.forEach(t => {
-        const id = t.assignedResourceID || 'unassigned';
-        byTech[id] = (byTech[id] || 0) + 1;
+      openTickets.forEach(t => {
+        const id = t.assignedResourceID;
+        if (resourceMap[id]) byTech[id] = (byTech[id] || 0) + 1;
       });
 
+      // Avg resolution time from completed tickets using completedDate - createDate
+      const completedTickets = tickets.completed.items || [];
+      const resolutionTimes = completedTickets
+        .filter(t => t.completedDate && t.createDate)
+        .map(t => {
+          const days = (new Date(t.completedDate) - new Date(t.createDate)) / (1000 * 60 * 60 * 24);
+          return days;
+        })
+        .filter(days => days >= 0);
+
+      const avgResolutionDays = resolutionTimes.length
+        ? (resolutionTimes.reduce((s, d) => s + d, 0) / resolutionTimes.length).toFixed(1)
+        : 0;
+
+      // Category breakdown from open tickets
       const byCategory = {};
-      (tickets.categories.items || []).forEach(t => {
+      openTickets.forEach(t => {
         const cat = t.ticketCategory || 'Uncategorized';
         byCategory[cat] = (byCategory[cat] || 0) + 1;
       });
 
       setData({
-        summary: { byMonth, total: allTickets.length },
-        open: { total: openTickets.length, avgAgeInDays: parseFloat(avgAge), byTech },
-        categories: { byCategory, total: tickets.categories.items?.length || 0 },
-        resources,
+        summary: { byMonth, total: tickets.summary.items?.length || 0 },
+        open: {
+          total: openTickets.length,
+          avgAgeInDays: parseFloat(avgResolutionDays),
+          byTech
+        },
+        categories: { byCategory, total: openTickets.length },
+        resources: { resources: Object.entries(resourceMap).map(([id, name]) => ({ id: parseInt(id), name })) },
         sla
       });
       setLastSynced(new Date());
