@@ -1,9 +1,3 @@
-/**
- * Central API client.
- * Reads Railway URL and API key from Vercel environment variables.
- * Add VITE_API_URL and VITE_API_KEY in Vercel -> Settings -> Environment Variables.
- */
-
 const BASE_URL = import.meta.env.VITE_API_URL;
 const API_KEY  = import.meta.env.VITE_API_KEY;
 
@@ -20,10 +14,8 @@ async function apiFetch(path) {
 
 export const api = {
   tickets: {
-    summary:    () => apiFetch('/api/tickets/summary'),
-    open:       () => apiFetch('/api/tickets/open'),
-    categories: () => apiFetch('/api/tickets/categories')
+    all: () => apiFetch('/api/tickets/all')
   },
-  resources:  () => apiFetch('/api/resources'),
-  sla:        () => apiFetch('/api/sla/compliance')
+  resources: () => apiFetch('/api/resources'),
+  sla:       () => apiFetch('/api/sla/compliance')
 };
