@@ -90,7 +90,7 @@ export function useDashboard() {
       const byIssueType = {};
       allTickets.forEach(t => {
         if (t.issueType) {
-          const label = issueTypeMap[t.issueType] || `Type ${t.issueType}`;
+          const label = issueTypeMap[String(t.issueType)] || `Type ${t.issueType}`;
           byIssueType[label] = (byIssueType[label] || 0) + 1;
         }
       });
