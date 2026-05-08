@@ -24,14 +24,16 @@ export function useDashboard() {
         .forEach(r => { resourceMap[r.id] = r.name; });
 
       // Volume by month from summary tickets
+      const allTickets = tickets.summary?.items || [];
       const byMonth = {};
-      (tickets.summary.items || []).forEach(t => {
+      allTickets.forEach(t => {
         const month = t.createDate?.substring(0, 7);
         if (month) byMonth[month] = (byMonth[month] || 0) + 1;
       });
 
       // Open tickets - exclude unassigned and excluded resources
-      const openTickets = (tickets.open.items || []).filter(
+      const openTicketsRaw = tickets.open?.items || [];
+      const openTickets = openTicketsRaw.filter(
         t => t.assignedResourceID && !excludeResources.includes(t.assignedResourceID)
       );
 
@@ -41,8 +43,8 @@ export function useDashboard() {
         if (resourceMap[id]) byTech[id] = (byTech[id] || 0) + 1;
       });
 
-      // Avg resolution time from completed tickets using completedDate - createDate
-      const completedTickets = tickets.completed.items || [];
+      // Avg resolution time from completed tickets
+      const completedTickets = tickets.completed?.items || [];
       const resolutionTimes = completedTickets
         .filter(t => t.completedDate && t.createDate)
         .map(t => {
@@ -63,7 +65,7 @@ export function useDashboard() {
       });
 
       setData({
-        summary: { byMonth, total: tickets.summary.items?.length || 0 },
+        summary: { byMonth, total: allTickets.length },
         open: {
           total: openTickets.length,
           avgAgeInDays: parseFloat(avgResolutionDays),
