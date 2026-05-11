@@ -15,9 +15,10 @@ export function TicketOverview({ data }) {
 
   const tickStyle = { fill: 'var(--text-secondary)', fontSize: 11, fontFamily: 'DM Mono, monospace' };
   const tooltipStyle = {
-    background: '#1c1f25', border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 8, color: '#e8e6e1', fontSize: 12
-  };
+  background: '#ffffff', border: '1px solid rgba(0,0,0,0.1)',
+  borderRadius: 8, color: '#1a1b1e', fontSize: 12,
+  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+};
 
   // Build volume chart with selected comparison period
   const allMonths = Object.keys(summary.byMonth).sort();
@@ -28,11 +29,17 @@ export function TicketOverview({ data }) {
     Math.max(0, totalMonths - comparePeriod)
   );
 
-  const volumeData = periodMonths.map((month, i) => ({
-    month: new Date(month + '-01').toLocaleString('default', { month: 'short' }),
+  const volumeData = periodMonths.map((month, i) => {
+  const currentLabel = new Date(month + '-01').toLocaleString('default', { month: 'short' });
+  const priorLabel = priorMonths[i]
+    ? new Date(priorMonths[i] + '-01').toLocaleString('default', { month: 'short' })
+    : '';
+  return {
+    month: priorLabel ? `${currentLabel} vs ${priorLabel}` : currentLabel,
     current: summary.byMonth[month] || 0,
     prior: summary.byMonth[priorMonths[i]] || 0
-  }));
+  };
+});
 
   const currentTotal = periodMonths.reduce((s, m) => s + (summary.byMonth[m] || 0), 0);
   const priorTotal = priorMonths.reduce((s, m) => s + (summary.byMonth[m] || 0), 0);

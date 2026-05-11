@@ -11,11 +11,10 @@ export default function App() {
   const { data, loading, error, lastSynced, sync } = useDashboard();
   const [activeTab, setActiveTab] = useState('Ticket overview');
 
-  // Auto-sync on first load
   useEffect(() => { sync(); }, []);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#0e0f11' }}>
+    <div className="min-h-screen flex flex-col" style={{ background: '#f4f5f7' }}>
       <TopBar lastSynced={lastSynced} loading={loading} onSync={sync} />
       <NavTabs active={activeTab} onChange={setActiveTab} />
 
@@ -30,7 +29,7 @@ export default function App() {
 
         {error && (
           <div className="rounded-xl p-5 mb-6"
-            style={{ background: 'rgba(224,92,92,0.1)', border: '1px solid rgba(224,92,92,0.3)' }}>
+            style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
             <p className="text-sm font-medium mb-1" style={{ color: 'var(--red)' }}>Connection error</p>
             <p className="text-xs" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
               {error}

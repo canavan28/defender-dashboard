@@ -5,7 +5,7 @@ export function MetricCard({ label, value, delta, deltaDir }) {
     'text-[var(--text-secondary)]';
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
       className="rounded-xl p-5">
       <p style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}
         className="text-xs uppercase tracking-widest mb-3">{label}</p>

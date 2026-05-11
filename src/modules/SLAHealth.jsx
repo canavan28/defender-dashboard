@@ -13,9 +13,10 @@ export function SLAHealth({ data }) {
   const change = ((slaBreachRate || 0) - (sla?.prior?.breachRate || 0)).toFixed(1);
   const tickStyle = { fill: 'var(--text-secondary)', fontSize: 11, fontFamily: 'DM Mono, monospace' };
   const tooltipStyle = {
-    background: '#1c1f25', border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 8, color: '#e8e6e1', fontSize: 12
-  };
+  background: '#ffffff', border: '1px solid rgba(0,0,0,0.1)',
+  borderRadius: 8, color: '#1a1b1e', fontSize: 12,
+  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+};
 
   return (
     <div className="space-y-6">
