@@ -30,7 +30,7 @@ export function useDashboard() {
       const byMonth = {};
 
       // Pre-populate all 12 months with 0
-      for (let i = 11; i >= 0; i--) {
+      for (let i = 23; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         byMonth[key] = 0;
