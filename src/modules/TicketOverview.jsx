@@ -41,7 +41,7 @@ export function TicketOverview({ data }) {
     : '';
 
   return {
-    month: priorLabel ? `${priorLabel}/${currentLabel}` : currentLabel,
+    month: `${currentLabel}`,
     prior: summary.byMonth[priorMonths[i]] || 0,
     current: summary.byMonth[month] || 0
   };
@@ -82,7 +82,9 @@ export function TicketOverview({ data }) {
               Monthly ticket volume
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
-              Current period vs prior period
+              {priorMonths.length > 0
+                ? `Current: ${new Date(periodMonths[0] + '-01').toLocaleString('default', { month: 'short' })} '${String(new Date(periodMonths[0] + '-01').getFullYear()).slice(2)} – ${new Date(periodMonths[periodMonths.length-1] + '-01').toLocaleString('default', { month: 'short' })} '${String(new Date(periodMonths[periodMonths.length-1] + '-01').getFullYear()).slice(2)} vs same period prior year`
+                : 'Current period vs prior period'}
             </p>
           </div>
           <div className="flex gap-2">
