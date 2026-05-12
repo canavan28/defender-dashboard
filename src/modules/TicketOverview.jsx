@@ -30,14 +30,20 @@ export function TicketOverview({ data }) {
   );
 
   const volumeData = periodMonths.map((month, i) => {
-  const currentLabel = new Date(month + '-01').toLocaleString('default', { month: 'short' });
+  const currentDate = new Date(month + '-01');
+  const currentLabel = `${currentDate.toLocaleString('default', { month: 'short' })} '${String(currentDate.getFullYear()).slice(2)}`;
+  
   const priorLabel = priorMonths[i]
-    ? new Date(priorMonths[i] + '-01').toLocaleString('default', { month: 'short' })
+    ? (() => {
+        const d = new Date(priorMonths[i] + '-01');
+        return `${d.toLocaleString('default', { month: 'short' })} '${String(d.getFullYear()).slice(2)}`;
+      })()
     : '';
+
   return {
-    month: priorLabel ? `${currentLabel} vs ${priorLabel}` : currentLabel,
-    current: summary.byMonth[month] || 0,
-    prior: summary.byMonth[priorMonths[i]] || 0
+    month: priorLabel ? `${priorLabel} → ${currentLabel}` : currentLabel,
+    prior: summary.byMonth[priorMonths[i]] || 0,
+    current: summary.byMonth[month] || 0
   };
 });
 
@@ -96,10 +102,10 @@ export function TicketOverview({ data }) {
         </div>
         <div className="flex gap-4 mb-4">
           <span className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-            <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: '#4f8ef7' }} /> Current
+            <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'rgba(37,99,235,0.3)' }} /> Prior
           </span>
           <span className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-            <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'rgba(79,142,247,0.3)' }} /> Prior
+            <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: '#2563eb' }} /> Current
           </span>
         </div>
         <ResponsiveContainer width="100%" height={220}>
@@ -107,8 +113,8 @@ export function TicketOverview({ data }) {
             <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} />
             <YAxis tick={tickStyle} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-            <Bar dataKey="current" name="Current" fill="#4f8ef7" radius={[3,3,0,0]} />
-            <Bar dataKey="prior" name="Prior" fill="rgba(79,142,247,0.3)" radius={[3,3,0,0]} />
+            <Bar dataKey="prior" name="Prior" fill="rgba(37,99,235,0.3)" radius={[3,3,0,0]} />
+            <Bar dataKey="current" name="Current" fill="#2563eb" radius={[3,3,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
