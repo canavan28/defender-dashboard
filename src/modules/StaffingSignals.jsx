@@ -86,19 +86,7 @@ export function StaffingSignals({ metrics, fullRefreshing, onFullRefresh, cacheI
 
   return (
     <div className="space-y-6">
-      {/* Verdict */}
-      <div style={{ background: 'var(--surface)', border: `1px solid ${verdict.color}`, borderRadius: 12 }}
-        className="p-5 flex items-center justify-between">
-        <div>
-          <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
-            Executive recommendation
-          </p>
-          <p className="text-lg font-medium" style={{ color: verdict.color }}>{verdict.text}</p>
-        </div>
-        <p className="text-xs" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
-          {dangerCount} critical · {warnCount} warning
-        </p>
-      </div>
+      
 
       {/* Volume signals */}
       <p className="text-xs font-medium uppercase tracking-widest" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
