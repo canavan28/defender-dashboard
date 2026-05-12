@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { TopBar } from './components/TopBar';
 import { NavTabs } from './components/NavTabs';
 import { TicketOverview } from './modules/TicketOverview';
@@ -6,9 +6,17 @@ import { TechCapacity } from './modules/TechCapacity';
 import { SLAHealth } from './modules/SLAHealth';
 import { StaffingSignals } from './modules/StaffingSignals';
 import { useDashboard } from './hooks/useDashboard';
+import { useTicketMetrics } from './hooks/useTicketMetrics';
+import { useState } from 'react';
 
 export default function App() {
-  const { data, loading, error, lastSynced, sync } = useDashboard();
+  const {
+    rawData, loading, fullRefreshing, error,
+    lastSynced, selectedQuarterKey, setSelectedQuarterKey,
+    sync, fullRefresh
+  } = useDashboard();
+
+  const metrics = useTicketMetrics(rawData, selectedQuarterKey);
   const [activeTab, setActiveTab] = useState('Ticket overview');
 
   useEffect(() => { sync(); }, []);
@@ -19,10 +27,13 @@ export default function App() {
       <NavTabs active={activeTab} onChange={setActiveTab} />
 
       <main className="flex-1 px-8 py-7">
-        {loading && !data && (
-          <div className="flex items-center justify-center h-64">
+        {loading && !rawData && (
+          <div className="flex flex-col items-center justify-center h-64 gap-3">
             <p className="text-sm" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
               Pulling data from AutoTask...
+            </p>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+              First load may take a few minutes while building the cache
             </p>
           </div>
         )}
@@ -37,12 +48,29 @@ export default function App() {
           </div>
         )}
 
-        {data && (
+        {metrics && (
           <>
-            {activeTab === 'Ticket overview'  && <TicketOverview data={data} />}
-            {activeTab === 'Tech capacity'    && <TechCapacity data={data} />}
-            {activeTab === 'SLA health'       && <SLAHealth data={data} />}
-            {activeTab === 'Staffing signals' && <StaffingSignals data={data} />}
+            {activeTab === 'Ticket overview' && (
+              <TicketOverview
+                metrics={metrics}
+                selectedQuarterKey={selectedQuarterKey}
+                onSelectQuarter={setSelectedQuarterKey}
+              />
+            )}
+            {activeTab === 'Tech capacity' && (
+              <TechCapacity metrics={metrics} selectedQuarterKey={selectedQuarterKey} />
+            )}
+            {activeTab === 'SLA health' && (
+              <SLAHealth metrics={metrics} />
+            )}
+            {activeTab === 'Staffing signals' && (
+              <StaffingSignals
+                metrics={metrics}
+                fullRefreshing={fullRefreshing}
+                onFullRefresh={fullRefresh}
+                cacheInfo={rawData?.cacheInfo}
+              />
+            )}
           </>
         )}
       </main>

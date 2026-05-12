@@ -14,8 +14,7 @@ async function apiFetch(path) {
 
 export const api = {
   tickets: {
-    all: () => apiFetch('/api/tickets/all')
-  },
-  resources: () => apiFetch('/api/resources'),
-  sla:       () => apiFetch('/api/sla/compliance')
+    all:         () => apiFetch('/api/tickets/all'),
+    fullRefresh: () => apiFetch('/api/tickets/fullrefresh')
+  }
 };
