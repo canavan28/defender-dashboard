@@ -61,31 +61,57 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter })
           </p>
         </div>
 
-        {/* Current quarter comparison card */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-          className="rounded-xl p-5 col-span-1">
-          <p style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}
-            className="text-xs uppercase tracking-widest mb-3">Current Quarter</p>
-          <div className="flex items-end gap-3 mb-2">
+        {/* Selected quarter vs same quarter prior year */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+        className="rounded-xl p-5 col-span-1">
+        <p style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}
+          className="text-xs uppercase tracking-widest mb-3">Selected Quarter</p>
+        {(() => {
+          if (!selectedQuarterKey) return (
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Select a quarter below</p>
+          );
+          const { year, quarter } = { 
+            year: parseInt(selectedQuarterKey.split('-Q')[0]), 
+            quarter: parseInt(selectedQuarterKey.split('-Q')[1]) 
+          };
+          const priorKey = `${year - 1}-Q${quarter}`;
+          const currentCount = metrics.quarterlyTrend.find(q => q.key === selectedQuarterKey)?.count || 0;
+          const priorCount = metrics.quarterlyTrend.find(q => q.key === priorKey)?.count || 0;
+          const change = priorCount ? (((currentCount - priorCount) / priorCount) * 100).toFixed(0) : null;
+          const currentLabel = `Q${quarter} ${year}`;
+          const priorLabel = `Q${quarter} ${year - 1}`;
+          return (
             <div>
-              <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{currentQuarter.priorLabel}</p>
-              <p className="text-2xl font-light" style={{ color: 'var(--text-secondary)' }}>
-                {currentQuarter.prior.toLocaleString()}
-              </p>
+              <div className="flex items-end gap-3 mb-2">
+                {priorCount > 0 ? (
+                  <>
+                    <div>
+                      <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{priorLabel}</p>
+                      <p className="text-2xl font-light" style={{ color: 'var(--text-secondary)' }}>
+                        {priorCount.toLocaleString()}
+                      </p>
+                    </div>
+                    <p className="text-lg mb-1" style={{ color: 'var(--text-secondary)' }}>→</p>
+                  </>
+                ) : null}
+                <div>
+                  <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{currentLabel}</p>
+                  <p className="text-2xl font-light" style={{ color: 'var(--text-primary)' }}>
+                    {currentCount.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              {change !== null && priorCount > 0 ? (
+                <p className={`text-xs font-medium ${parseInt(change) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {parseInt(change) > 0 ? '+' : ''}{change}% vs same quarter prior year
+                </p>
+              ) : (
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>No prior year data available</p>
+              )}
             </div>
-            <p className="text-lg mb-1" style={{ color: 'var(--text-secondary)' }}>→</p>
-            <div>
-              <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{currentQuarter.currentLabel}</p>
-              <p className="text-2xl font-light" style={{ color: 'var(--text-primary)' }}>
-                {currentQuarter.current.toLocaleString()}
-              </p>
-            </div>
-          </div>
-          <p className={`text-xs font-medium ${currentQuarter.change > 0 ? 'text-red-600' : 'text-green-600'}`}>
-            {currentQuarter.change > 0 ? '+' : ''}{currentQuarter.change}% vs same quarter prior year
-          </p>
-        </div>
-
+          );
+        })()}
+      </div>
         <MetricCard label="Avg resolution" value={`${avgResolutionDays}d`}
           delta="Completed tickets" deltaDir="neutral" />
         <MetricCard label="SLA breach rate" value={`${slaBreachRate}%`}
