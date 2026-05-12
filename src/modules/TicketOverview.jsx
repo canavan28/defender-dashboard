@@ -41,7 +41,7 @@ export function TicketOverview({ data }) {
     : '';
 
   return {
-    month: priorLabel ? `${priorLabel} → ${currentLabel}` : currentLabel,
+    month: priorLabel ? `${priorLabel}/${currentLabel}` : currentLabel,
     prior: summary.byMonth[priorMonths[i]] || 0,
     current: summary.byMonth[month] || 0
   };
@@ -110,7 +110,7 @@ export function TicketOverview({ data }) {
         </div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={volumeData} barGap={3}>
-            <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} />
+            <XAxis dataKey="month" tick={{...tickStyle, fontSize: 10}} axisLine={false} tickLine={false} angle={-25} textAnchor="end" height={50} />
             <YAxis tick={tickStyle} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
             <Bar dataKey="prior" name="Prior" fill="rgba(37,99,235,0.3)" radius={[3,3,0,0]} />
