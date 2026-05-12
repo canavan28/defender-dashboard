@@ -1,4 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { QuarterSelector } from '../components/QuarterSelector';
 
 const tooltipStyle = {
   background: '#ffffff', border: '1px solid rgba(0,0,0,0.1)',
@@ -22,15 +23,14 @@ function MetricCard({ label, value, delta, deltaDir }) {
   );
 }
 
-export function SLAHealth({ metrics }) {
+export function SLAHealth({ metrics, selectedQuarterKey, onSelectQuarter }) {
   if (!metrics) return null;
-  const { slaBreachRate, slaEligibleCount, quarterlyTrend, selectedQLabel } = metrics;
-
+  const { slaBreachRate, slaEligibleCount, quarterlyTrend, selectedQLabel, avgResolutionDays } = metrics;
   const tickStyle = { fill: '#6b7280', fontSize: 11, fontFamily: 'DM Mono, monospace' };
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <MetricCard label="SLA breach rate" value={`${slaBreachRate}%`}
           delta={selectedQLabel ? `For ${selectedQLabel}` : 'First response breaches'}
           deltaDir={slaBreachRate > 10 ? 'up-bad' : 'down-good'} />
@@ -39,15 +39,30 @@ export function SLAHealth({ metrics }) {
         <MetricCard label="Tickets met SLA"
           value={Math.round(slaEligibleCount * (1 - slaBreachRate / 100)).toLocaleString()}
           delta="On-time first responses" deltaDir="neutral" />
+        <MetricCard label="Avg resolution" value={`${avgResolutionDays}d`}
+          delta="Completed tickets" deltaDir="neutral" />
+      </div>
+
+      {/* Quarter selector */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        className="rounded-xl p-4 flex items-center gap-4">
+        <p className="text-xs flex-shrink-0" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+          Filter by quarter:
+        </p>
+        <QuarterSelector
+          quarters={quarterlyTrend}
+          selectedKey={selectedQuarterKey}
+          onChange={onSelectQuarter}
+        />
       </div>
 
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
         className="rounded-xl p-6">
         <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-          Ticket volume trend
+          Quarterly ticket volume trend
         </p>
         <p className="text-xs mb-6" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
-          Quarterly — use Ticket Overview to filter SLA by quarter
+          All quarters · SLA metrics above filter to selected quarter
         </p>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={quarterlyTrend}>

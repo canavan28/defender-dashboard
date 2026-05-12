@@ -1,8 +1,26 @@
+import { QuarterSelector } from '../components/QuarterSelector';
+
 const tooltipStyle = {
   background: '#ffffff', border: '1px solid rgba(0,0,0,0.1)',
   borderRadius: 8, color: '#1a1b1e', fontSize: 12,
   boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
 };
+
+function MetricCard({ label, value, delta, deltaDir }) {
+  const deltaColor =
+    deltaDir === 'up-bad' ? 'text-red-600' :
+    deltaDir === 'down-good' ? 'text-green-600' :
+    'text-gray-400';
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+      className="rounded-xl p-5">
+      <p style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}
+        className="text-xs uppercase tracking-widest mb-3">{label}</p>
+      <p className="text-3xl font-light mb-2" style={{ color: 'var(--text-primary)' }}>{value}</p>
+      {delta && <p className={`text-xs font-medium ${deltaColor}`}>{delta}</p>}
+    </div>
+  );
+}
 
 function TechBar({ name, count, maxCount, colorFn }) {
   return (
@@ -23,25 +41,9 @@ function TechBar({ name, count, maxCount, colorFn }) {
   );
 }
 
-function MetricCard({ label, value, delta, deltaDir }) {
-  const deltaColor =
-    deltaDir === 'up-bad' ? 'text-red-600' :
-    deltaDir === 'down-good' ? 'text-green-600' :
-    'text-gray-400';
-  return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-      className="rounded-xl p-5">
-      <p style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}
-        className="text-xs uppercase tracking-widest mb-3">{label}</p>
-      <p className="text-3xl font-light mb-2" style={{ color: 'var(--text-primary)' }}>{value}</p>
-      {delta && <p className={`text-xs font-medium ${deltaColor}`}>{delta}</p>}
-    </div>
-  );
-}
-
-export function TechCapacity({ metrics, selectedQuarterKey }) {
+export function TechCapacity({ metrics, selectedQuarterKey, onSelectQuarter }) {
   if (!metrics) return null;
-  const { openByTechList, closedByTechList, selectedQLabel } = metrics;
+  const { openByTechList, closedByTechList, selectedQLabel, quarterlyTrend, avgOpenAge } = metrics;
 
   const maxOpen = openByTechList[0]?.count || 1;
   const maxClosed = closedByTechList[0]?.count || 1;
@@ -55,8 +57,6 @@ export function TechCapacity({ metrics, selectedQuarterKey }) {
     return 'var(--green)';
   };
 
-  const closedColor = () => '#2563eb';
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-3 gap-4">
@@ -65,13 +65,24 @@ export function TechCapacity({ metrics, selectedQuarterKey }) {
         <MetricCard label="Avg open tickets" value={avgOpen}
           delta={avgOpen > 15 ? 'Above healthy threshold' : 'Within healthy range'}
           deltaDir={avgOpen > 15 ? 'up-bad' : 'down-good'} />
-        <MetricCard label="Highest load" value={openByTechList[0]?.count || 0}
-          delta={openByTechList[0]?.name || ''}
-          deltaDir={openByTechList[0]?.count > 20 ? 'up-bad' : 'neutral'} />
+        <MetricCard label="Avg ticket age" value={`${avgOpenAge}d`}
+          delta="Days since created" deltaDir="neutral" />
+      </div>
+
+      {/* Quarter selector */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        className="rounded-xl p-4 flex items-center gap-4">
+        <p className="text-xs flex-shrink-0" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+          Closed tickets period:
+        </p>
+        <QuarterSelector
+          quarters={quarterlyTrend}
+          selectedKey={selectedQuarterKey}
+          onChange={onSelectQuarter}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        {/* Current open tickets */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           className="rounded-xl p-6">
           <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
@@ -91,19 +102,18 @@ export function TechCapacity({ metrics, selectedQuarterKey }) {
           </div>
         </div>
 
-        {/* Closed tickets by selected quarter */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
           className="rounded-xl p-6">
           <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
             Tickets closed per tech
           </p>
           <p className="text-xs mb-6" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
-            {selectedQLabel || 'Select a quarter to filter'} · Based on completed date
+            {selectedQLabel || 'Select a quarter'} · Based on completed date
           </p>
           <div className="space-y-4">
             {closedByTechList.map(tech => (
               <TechBar key={tech.id} name={tech.name} count={tech.count}
-                maxCount={maxClosed} colorFn={closedColor} />
+                maxCount={maxClosed} colorFn={() => '#2563eb'} />
             ))}
             {closedByTechList.length === 0 && (
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>

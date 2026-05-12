@@ -58,10 +58,18 @@ export default function App() {
               />
             )}
             {activeTab === 'Tech capacity' && (
-              <TechCapacity metrics={metrics} selectedQuarterKey={selectedQuarterKey} />
+              <TechCapacity
+                metrics={metrics}
+                selectedQuarterKey={selectedQuarterKey}
+                onSelectQuarter={setSelectedQuarterKey}
+              />
             )}
             {activeTab === 'SLA health' && (
-              <SLAHealth metrics={metrics} />
+              <SLAHealth
+                metrics={metrics}
+                selectedQuarterKey={selectedQuarterKey}
+                onSelectQuarter={setSelectedQuarterKey}
+              />
             )}
             {activeTab === 'Staffing signals' && (
               <StaffingSignals
