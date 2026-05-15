@@ -11,7 +11,7 @@ import { useState } from 'react';
 
 export default function App() {
   const {
-    rawData, loading, fullRefreshing, error,
+    rawData, loading, fullRefreshStep, error,
     lastSynced, selectedQuarterKey, setSelectedQuarterKey,
     sync, fullRefresh
   } = useDashboard();
