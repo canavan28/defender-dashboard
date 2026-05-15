@@ -1,4 +1,4 @@
-export function StaffingSignals({ metrics, fullRefreshing, onFullRefresh, cacheInfo }) {
+export function StaffingSignals({ metrics, fullRefreshStep, onFullRefresh, cacheInfo }) {
   if (!metrics) return null;
   const { staffing, openByTechList, avgOpenAge, avgResolutionDays, slaBreachRate } = metrics;
   const { trailing12, lastCompleteQuarter } = staffing;
@@ -164,15 +164,15 @@ export function StaffingSignals({ metrics, fullRefreshing, onFullRefresh, cacheI
         <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)' }}>
           Regular sync only refreshes the last 30 days. Use Full refresh to rebuild the complete historical dataset. This will take several minutes.
         </p>
-        <button onClick={onFullRefresh} disabled={fullRefreshing}
+        <button onClick={onFullRefresh} disabled={!!fullRefreshStep}
           style={{
             border: '1px solid var(--border)',
-            color: fullRefreshing ? 'var(--text-secondary)' : 'var(--text-primary)',
+            color: fullRefreshStep ? 'var(--text-secondary)' : 'var(--text-primary)',
             background: 'var(--surface-raised)',
             fontFamily: 'DM Mono, monospace'
           }}
           className="text-xs px-4 py-2 rounded-lg transition-all disabled:cursor-not-allowed">
-          {fullRefreshing ? 'Running full refresh... this may take several minutes' : 'Full refresh'}
+          {fullRefreshStep || 'Full refresh'}
         </button>
       </div>
     </div>

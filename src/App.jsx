@@ -74,7 +74,7 @@ export default function App() {
             {activeTab === 'Staffing signals' && (
               <StaffingSignals
                 metrics={metrics}
-                fullRefreshing={fullRefreshing}
+                fullRefreshStep={fullRefreshStep}
                 onFullRefresh={fullRefresh}
                 cacheInfo={rawData?.cacheInfo}
               />

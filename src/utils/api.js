@@ -14,7 +14,8 @@ async function apiFetch(path) {
 
 export const api = {
   tickets: {
-    all:         () => apiFetch('/api/tickets/all'),
-    fullRefresh: () => apiFetch('/api/tickets/fullrefresh')
+    all:                () => apiFetch('/api/tickets/all'),
+    refreshTickets:     () => apiFetch('/api/tickets/refreshtickets'),
+    refreshTimeEntries: () => apiFetch('/api/tickets/refreshtimeentries')
   }
 };
