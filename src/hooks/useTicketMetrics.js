@@ -180,9 +180,19 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
   });
 
   // ── Time entry analytics ──────────────────────────────────────────────────
-  const teSource = selectedQTimeEntries.length > 0
+  const EXCLUDE_ISSUE_TYPES_TIME = new Set(['27']);
+
+const filterTimeEntries = (entries) => entries.filter(te => {
+  const ticket = ticketMap[te.ticketID];
+  if (!ticket) return true;
+  return !EXCLUDE_ISSUE_TYPES_TIME.has(String(ticket.issueType));
+});
+
+const teSource = filterTimeEntries(
+  selectedQTimeEntries.length > 0
     ? selectedQTimeEntries
-    : (timeEntries || []);
+    : (timeEntries || [])
+);
 
   // Hours by tech
   const hoursByTech = {};
