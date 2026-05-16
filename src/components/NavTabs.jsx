@@ -1,4 +1,10 @@
-const TABS = ['Ticket overview', 'Tech capacity', 'SLA health', 'Staffing signals'];
+const TABS = [
+  'Ticket overview',
+  'Tech capacity',
+  'Time analytics',
+  'SLA health',
+  'Staffing signals'
+];
 
 export function NavTabs({ active, onChange }) {
   return (

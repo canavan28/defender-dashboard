@@ -1,13 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { TopBar } from './components/TopBar';
 import { NavTabs } from './components/NavTabs';
 import { TicketOverview } from './modules/TicketOverview';
 import { TechCapacity } from './modules/TechCapacity';
+import { TimeAnalytics } from './modules/TimeAnalytics';
 import { SLAHealth } from './modules/SLAHealth';
 import { StaffingSignals } from './modules/StaffingSignals';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
-import { useState } from 'react';
 
 export default function App() {
   const {
@@ -29,10 +29,12 @@ export default function App() {
       <main className="flex-1 px-8 py-7">
         {loading && !rawData && (
           <div className="flex flex-col items-center justify-center h-64 gap-3">
-            <p className="text-sm" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+            <p className="text-sm"
+              style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
               Pulling data from AutoTask...
             </p>
-            <p className="text-xs" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+            <p className="text-xs"
+              style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
               First load may take a few minutes while building the cache
             </p>
           </div>
@@ -41,8 +43,11 @@ export default function App() {
         {error && (
           <div className="rounded-xl p-5 mb-6"
             style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
-            <p className="text-sm font-medium mb-1" style={{ color: 'var(--red)' }}>Connection error</p>
-            <p className="text-xs" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+            <p className="text-sm font-medium mb-1" style={{ color: 'var(--red)' }}>
+              Connection error
+            </p>
+            <p className="text-xs"
+              style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
               {error}
             </p>
           </div>
@@ -59,6 +64,13 @@ export default function App() {
             )}
             {activeTab === 'Tech capacity' && (
               <TechCapacity
+                metrics={metrics}
+                selectedQuarterKey={selectedQuarterKey}
+                onSelectQuarter={setSelectedQuarterKey}
+              />
+            )}
+            {activeTab === 'Time analytics' && (
+              <TimeAnalytics
                 metrics={metrics}
                 selectedQuarterKey={selectedQuarterKey}
                 onSelectQuarter={setSelectedQuarterKey}

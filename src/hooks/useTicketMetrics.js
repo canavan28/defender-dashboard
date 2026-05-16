@@ -1,8 +1,3 @@
-/**
- * All metric calculations live here.
- * Takes raw ticket data + a selected quarter and returns derived metrics.
- */
-
 export function getQuarterLabel(date) {
   const q = Math.floor(date.getMonth() / 3) + 1;
   return `Q${q} '${String(date.getFullYear()).slice(2)}`;
@@ -38,7 +33,8 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
 
   const {
     allTickets, completedTickets, openTickets,
-    resources, excludeResources, issueTypeMap
+    timeEntries, resources, excludeResources,
+    issueTypeMap, subIssueMap
   } = rawData;
 
   const now = new Date();
@@ -48,6 +44,10 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
   (resources || [])
     .filter(r => r.licenseType !== 7 && !excludeResources.includes(r.id))
     .forEach(r => { resourceMap[r.id] = r.name; });
+
+  // ── Ticket lookup map (id -> ticket) ────────────────────────────────────────
+  const ticketMap = {};
+  allTickets.forEach(t => { ticketMap[t.id] = t; });
 
   // ── Build quarterly buckets ─────────────────────────────────────────────────
   const quarterMap = {};
@@ -76,34 +76,26 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
   const ytdStart = new Date(now.getFullYear(), 0, 1);
   const ytdEnd = now;
   const priorYtdStart = new Date(now.getFullYear() - 1, 0, 1);
-  const priorYtdEnd = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 23, 59, 59);
+  const priorYtdEnd = new Date(
+    now.getFullYear() - 1, now.getMonth(),
+    now.getDate(), 23, 59, 59
+  );
 
   const ytdCurrent = filterByDateRange(allTickets, ytdStart, ytdEnd).length;
   const ytdPrior = filterByDateRange(allTickets, priorYtdStart, priorYtdEnd).length;
-  const ytdChange = ytdPrior ? (((ytdCurrent - ytdPrior) / ytdPrior) * 100).toFixed(0) : 0;
+  const ytdChange = ytdPrior
+    ? (((ytdCurrent - ytdPrior) / ytdPrior) * 100).toFixed(0)
+    : 0;
 
   const ytdStartLabel = `Jan 1 '${String(now.getFullYear()).slice(2)}`;
   const ytdEndLabel = `${now.toLocaleString('default', { month: 'short' })} ${now.getDate()} '${String(now.getFullYear()).slice(2)}`;
   const priorYtdStartLabel = `Jan 1 '${String(now.getFullYear() - 1).slice(2)}`;
   const priorYtdEndLabel = `${priorYtdEnd.toLocaleString('default', { month: 'short' })} ${priorYtdEnd.getDate()} '${String(priorYtdEnd.getFullYear()).slice(2)}`;
 
-  // ── Current partial quarter ────────────────────────────────────────────────
-  const currentQNum = Math.floor(now.getMonth() / 3) + 1;
-  const currentQYear = now.getFullYear();
-  const { start: cqStart, end: cqEnd } = getQuarterRange(currentQYear, currentQNum);
-  const { start: priorCqStart, end: priorCqEnd } = getQuarterRange(currentQYear - 1, currentQNum);
-  // Make prior quarter partial — same day cutoff
-  const priorCqCutoff = new Date(currentQYear - 1, now.getMonth(), now.getDate(), 23, 59, 59);
-
-  const currentQCount = filterByDateRange(allTickets, cqStart, now).length;
-  const priorQCount = filterByDateRange(allTickets, priorCqStart, priorCqCutoff).length;
-  const currentQChange = priorQCount ? (((currentQCount - priorQCount) / priorQCount) * 100).toFixed(0) : 0;
-  const currentQLabel = `Q${currentQNum} ${currentQYear}`;
-  const priorQLabel = `Q${currentQNum} ${currentQYear - 1}`;
-
   // ── Selected quarter metrics ───────────────────────────────────────────────
   let selectedQTickets = [];
   let selectedQCompleted = [];
+  let selectedQTimeEntries = [];
   let selectedQLabel = '';
 
   if (selectedQuarterKey) {
@@ -112,7 +104,24 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     selectedQLabel = `Q${quarter} ${year}`;
     selectedQTickets = filterByDateRange(allTickets, start, end);
     selectedQCompleted = filterByDateRange(completedTickets, start, end, 'completedDate');
+    selectedQTimeEntries = (timeEntries || []).filter(t => {
+      if (!t.dateWorked) return false;
+      const d = new Date(t.dateWorked);
+      return d >= start && d <= end;
+    });
   }
+
+  // ── Avg resolution time — uses selected quarter completed tickets ──────────
+  const resolutionSource = selectedQCompleted.length > 0
+    ? selectedQCompleted
+    : completedTickets;
+  const resolutionTimes = resolutionSource
+    .filter(t => t.completedDate && t.createDate)
+    .map(t => (new Date(t.completedDate) - new Date(t.createDate)) / (1000 * 60 * 60 * 24))
+    .filter(d => d >= 0 && d < 365);
+  const avgResolutionDays = resolutionTimes.length
+    ? (resolutionTimes.reduce((s, d) => s + d, 0) / resolutionTimes.length).toFixed(1)
+    : 0;
 
   // ── Closed tickets per tech for selected quarter ───────────────────────────
   const closedByTech = {};
@@ -130,7 +139,9 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
   // ── Current open tickets per tech ─────────────────────────────────────────
   const openByTech = {};
   (openTickets || [])
-    .filter(t => t.assignedResourceID && !excludeResources.includes(t.assignedResourceID) && resourceMap[t.assignedResourceID])
+    .filter(t => t.assignedResourceID &&
+      !excludeResources.includes(t.assignedResourceID) &&
+      resourceMap[t.assignedResourceID])
     .forEach(t => {
       openByTech[t.assignedResourceID] = (openByTech[t.assignedResourceID] || 0) + 1;
     });
@@ -147,16 +158,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     ? (openAges.reduce((s, d) => s + d, 0) / openAges.length).toFixed(1)
     : 0;
 
-  // ── Avg resolution time ───────────────────────────────────────────────────
-  const resolutionTimes = completedTickets
-    .filter(t => t.completedDate && t.createDate)
-    .map(t => (new Date(t.completedDate) - new Date(t.createDate)) / (1000 * 60 * 60 * 24))
-    .filter(d => d >= 0 && d < 365);
-  const avgResolutionDays = resolutionTimes.length
-    ? (resolutionTimes.reduce((s, d) => s + d, 0) / resolutionTimes.length).toFixed(1)
-    : 0;
-
-  // ── SLA breach rate (selected quarter or all time) ────────────────────────
+  // ── SLA breach rate ───────────────────────────────────────────────────────
   const slaTickets = selectedQTickets.length > 0 ? selectedQTickets : allTickets;
   const slaEligible = slaTickets.filter(t => t.firstResponseDueDateTime);
   const slaBreach = slaEligible.filter(t => {
@@ -167,7 +169,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     ? parseFloat(((slaBreach.length / slaEligible.length) * 100).toFixed(1))
     : 0;
 
-  // ── Issue type breakdown (selected quarter or all) ────────────────────────
+  // ── Issue type breakdown ──────────────────────────────────────────────────
   const issueSource = selectedQTickets.length > 0 ? selectedQTickets : allTickets;
   const byIssueType = {};
   issueSource.forEach(t => {
@@ -177,7 +179,106 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     }
   });
 
-  // ── Staffing signals — trailing 12 vs prior 12 ───────────────────────────
+  // ── Time entry analytics ──────────────────────────────────────────────────
+  const teSource = selectedQTimeEntries.length > 0
+    ? selectedQTimeEntries
+    : (timeEntries || []);
+
+  // Hours by tech
+  const hoursByTech = {};
+  const billableHoursByTech = {};
+  const nonBillableHoursByTech = {};
+  const entryCountByTech = {};
+
+  teSource.forEach(te => {
+    if (!resourceMap[te.resourceID]) return;
+    const name = resourceMap[te.resourceID];
+    const hours = te.hoursWorked || 0;
+    hoursByTech[name] = (hoursByTech[name] || 0) + hours;
+    entryCountByTech[name] = (entryCountByTech[name] || 0) + 1;
+    if (te.isNonBillable) {
+      nonBillableHoursByTech[name] = (nonBillableHoursByTech[name] || 0) + hours;
+    } else {
+      billableHoursByTech[name] = (billableHoursByTech[name] || 0) + hours;
+    }
+  });
+
+  const hoursByTechList = Object.entries(hoursByTech)
+    .map(([name, hours]) => ({
+      name,
+      hours: parseFloat(hours.toFixed(1)),
+      billable: parseFloat((billableHoursByTech[name] || 0).toFixed(1)),
+      nonBillable: parseFloat((nonBillableHoursByTech[name] || 0).toFixed(1)),
+      entries: entryCountByTech[name] || 0,
+      billablePct: hours > 0
+        ? Math.round(((billableHoursByTech[name] || 0) / hours) * 100)
+        : 0
+    }))
+    .sort((a, b) => b.hours - a.hours);
+
+  // Total hours
+  const totalHours = parseFloat(
+    teSource.reduce((s, te) => s + (te.hoursWorked || 0), 0).toFixed(1)
+  );
+  const totalBillableHours = parseFloat(
+    teSource.filter(te => !te.isNonBillable)
+      .reduce((s, te) => s + (te.hoursWorked || 0), 0).toFixed(1)
+  );
+  const totalNonBillableHours = parseFloat(
+    teSource.filter(te => te.isNonBillable)
+      .reduce((s, te) => s + (te.hoursWorked || 0), 0).toFixed(1)
+  );
+  const overallBillablePct = totalHours > 0
+    ? Math.round((totalBillableHours / totalHours) * 100)
+    : 0;
+
+  // Notes coverage
+  const entriesWithNotes = teSource.filter(
+    te => (te.summaryNotes && te.summaryNotes.trim().length > 0) ||
+          (te.internalNotes && te.internalNotes.trim().length > 0)
+  ).length;
+  const notesCoverage = teSource.length > 0
+    ? Math.round((entriesWithNotes / teSource.length) * 100)
+    : 0;
+
+  // Hours by issue type with sub issue breakdown
+  const hoursByIssue = {};
+  teSource.forEach(te => {
+    const ticket = ticketMap[te.ticketID];
+    if (!ticket) return;
+    const hours = te.hoursWorked || 0;
+    const issueKey = String(ticket.issueType || '');
+    const subIssueKey = String(ticket.subIssueType || '');
+    const issueLabel = issueTypeMap[issueKey] || 'Uncategorized';
+    const subIssueLabel = subIssueMap[subIssueKey]?.label || null;
+
+    if (!hoursByIssue[issueLabel]) {
+      hoursByIssue[issueLabel] = { hours: 0, subIssues: {} };
+    }
+    hoursByIssue[issueLabel].hours += hours;
+
+    if (subIssueLabel) {
+      if (!hoursByIssue[issueLabel].subIssues[subIssueLabel]) {
+        hoursByIssue[issueLabel].subIssues[subIssueLabel] = 0;
+      }
+      hoursByIssue[issueLabel].subIssues[subIssueLabel] += hours;
+    }
+  });
+
+  const hoursByIssueList = Object.entries(hoursByIssue)
+    .map(([label, data]) => ({
+      label,
+      hours: parseFloat(data.hours.toFixed(1)),
+      subIssues: Object.entries(data.subIssues)
+        .map(([subLabel, hours]) => ({
+          label: subLabel,
+          hours: parseFloat(hours.toFixed(1))
+        }))
+        .sort((a, b) => b.hours - a.hours)
+    }))
+    .sort((a, b) => b.hours - a.hours);
+
+  // ── Staffing signals ──────────────────────────────────────────────────────
   const trailing12Start = new Date();
   trailing12Start.setMonth(trailing12Start.getMonth() - 12);
   const prior12Start = new Date();
@@ -191,14 +292,19 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     ? (((trailing12Count - prior12Count) / prior12Count) * 100).toFixed(0)
     : 0;
 
-  // Last complete quarter vs same quarter prior year
+  const currentQNum = Math.floor(now.getMonth() / 3) + 1;
+  const currentQYear = now.getFullYear();
   const lastCompleteQNum = currentQNum === 1 ? 4 : currentQNum - 1;
   const lastCompleteQYear = currentQNum === 1 ? currentQYear - 1 : currentQYear;
   const { start: lcqStart, end: lcqEnd } = getQuarterRange(lastCompleteQYear, lastCompleteQNum);
-  const { start: lcqPriorStart, end: lcqPriorEnd } = getQuarterRange(lastCompleteQYear - 1, lastCompleteQNum);
+  const { start: lcqPriorStart, end: lcqPriorEnd } = getQuarterRange(
+    lastCompleteQYear - 1, lastCompleteQNum
+  );
 
   const lastCompleteQCount = filterByDateRange(allTickets, lcqStart, lcqEnd).length;
-  const lastCompleteQPriorCount = filterByDateRange(allTickets, lcqPriorStart, lcqPriorEnd).length;
+  const lastCompleteQPriorCount = filterByDateRange(
+    allTickets, lcqPriorStart, lcqPriorEnd
+  ).length;
   const lastCompleteQChange = lastCompleteQPriorCount
     ? (((lastCompleteQCount - lastCompleteQPriorCount) / lastCompleteQPriorCount) * 100).toFixed(0)
     : 0;
@@ -210,15 +316,11 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
       currentLabel: `${ytdStartLabel} – ${ytdEndLabel}`,
       priorLabel: `${priorYtdStartLabel} – ${priorYtdEndLabel}`
     },
-    // Current partial quarter
-    currentQuarter: {
-      current: currentQCount, prior: priorQCount, change: parseInt(currentQChange),
-      currentLabel: currentQLabel, priorLabel: priorQLabel
-    },
-    // Chart data
+    // Chart
     quarterlyTrend,
     selectedQLabel,
     selectedQTickets,
+    selectedQTimeEntries,
     // Tech data
     openByTechList,
     closedByTechList,
@@ -229,15 +331,30 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     slaEligibleCount: slaEligible.length,
     // Issue types
     byIssueType,
+    // Time analytics
+    timeAnalytics: {
+      totalHours,
+      totalBillableHours,
+      totalNonBillableHours,
+      overallBillablePct,
+      notesCoverage,
+      hoursByTechList,
+      hoursByIssueList,
+      entryCount: teSource.length
+    },
     // Staffing
     staffing: {
       trailing12: {
-        current: trailing12Count, prior: prior12Count, change: parseInt(trailing12Change),
+        current: trailing12Count,
+        prior: prior12Count,
+        change: parseInt(trailing12Change),
         currentLabel: `${trailing12Start.toLocaleString('default', { month: 'short' })} '${String(trailing12Start.getFullYear()).slice(2)} – Now`,
         priorLabel: `${prior12Start.toLocaleString('default', { month: 'short' })} '${String(prior12Start.getFullYear()).slice(2)} – ${prior12End.toLocaleString('default', { month: 'short' })} '${String(prior12End.getFullYear()).slice(2)}`
       },
       lastCompleteQuarter: {
-        current: lastCompleteQCount, prior: lastCompleteQPriorCount, change: parseInt(lastCompleteQChange),
+        current: lastCompleteQCount,
+        prior: lastCompleteQPriorCount,
+        change: parseInt(lastCompleteQChange),
         currentLabel: `Q${lastCompleteQNum} ${lastCompleteQYear}`,
         priorLabel: `Q${lastCompleteQNum} ${lastCompleteQYear - 1}`
       }
