@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, Legend
 } from 'recharts';
 
-const COLORS = ['#4f8ef7','#e09a3a','#4caf78','#e05c5c','#9b72f7','#f76f4f','#4fd4c4','#f7c94f'];
+const COLORS = ['#4f8ef7', '#e09a3a', '#4caf78', '#e05c5c', '#9b72f7', '#f76f4f', '#4fd4c4', '#f7c94f'];
 
 const tooltipStyle = {
   background: '#ffffff', border: '1px solid rgba(0,0,0,0.1)',
@@ -16,8 +16,8 @@ const tooltipStyle = {
 export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter }) {
   if (!metrics) return null;
   const {
-    ytd, currentQuarter, quarterlyTrend,
-    avgOpenAge, avgResolutionDays, slaBreachRate,
+    ytd, quarterlyTrend,
+    avgResolutionDays, slaBreachRate,
     byIssueType, selectedQLabel
   } = metrics;
 
@@ -32,105 +32,110 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter })
     ...(otherCount > 0 ? [{ name: 'Other', value: otherCount }] : [])
   ];
 
+  // Selected quarter calculations
+  const selectedQ = selectedQuarterKey ? (() => {
+    const year = parseInt(selectedQuarterKey.split('-Q')[0]);
+    const quarter = parseInt(selectedQuarterKey.split('-Q')[1]);
+    const priorKey = `${year - 1}-Q${quarter}`;
+    const currentCount = quarterlyTrend.find(q => q.key === selectedQuarterKey)?.count || 0;
+    const priorCount = quarterlyTrend.find(q => q.key === priorKey)?.count || 0;
+    const change = priorCount ? (((currentCount - priorCount) / priorCount) * 100).toFixed(0) : null;
+    return {
+      currentLabel: `Q${quarter} ${year}`,
+      priorLabel: `Q${quarter} ${year - 1}`,
+      currentCount, priorCount, change
+    };
+  })() : null;
+
   return (
-    <div className="space-y-6">
-      {/* Metric cards */}
-      <div className="grid grid-cols-4 gap-4">
-        {/* YTD comparison card */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-          className="rounded-xl p-5 col-span-1">
-          <p style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}
-            className="text-xs uppercase tracking-widest mb-3">Year to Date</p>
-          <div className="flex items-end gap-3 mb-2">
-            <div>
-              <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{ytd.priorLabel}</p>
-              <p className="text-2xl font-light" style={{ color: 'var(--text-secondary)' }}>
-                {ytd.prior.toLocaleString()}
-              </p>
-            </div>
-            <p className="text-lg mb-1" style={{ color: 'var(--text-secondary)' }}>→</p>
-            <div>
-              <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{ytd.currentLabel}</p>
-              <p className="text-2xl font-light" style={{ color: 'var(--text-primary)' }}>
-                {ytd.current.toLocaleString()}
-              </p>
-            </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* KPI row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+
+        {/* YTD card */}
+        <div className="it-card" style={{ padding: '18px 20px 16px' }}>
+          <div className="it-eyebrow">Year to date</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
+            <span style={{ color: 'var(--ink3)', fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>
+              {ytd.prior.toLocaleString()}
+            </span>
+            <span style={{ color: 'var(--ink4)', fontSize: 16 }}>→</span>
+            <span style={{ fontSize: 30, fontWeight: 500, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+              {ytd.current.toLocaleString()}
+            </span>
           </div>
-          <p className={`text-xs font-medium ${ytd.change > 0 ? 'text-red-600' : 'text-green-600'}`}>
+          <div style={{ marginTop: 8, fontSize: 12.5, color: ytd.change > 0 ? 'var(--red)' : 'var(--green)' }}>
             {ytd.change > 0 ? '+' : ''}{ytd.change}% year over year
-          </p>
+          </div>
+          <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginTop: 6 }}>
+            {ytd.priorLabel} · {ytd.currentLabel}
+          </div>
         </div>
 
-        {/* Selected quarter vs same quarter prior year */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-        className="rounded-xl p-5 col-span-1">
-        <p style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}
-          className="text-xs uppercase tracking-widest mb-3">Selected Quarter</p>
-        {(() => {
-          if (!selectedQuarterKey) return (
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Select a quarter below</p>
-          );
-          const { year, quarter } = { 
-            year: parseInt(selectedQuarterKey.split('-Q')[0]), 
-            quarter: parseInt(selectedQuarterKey.split('-Q')[1]) 
-          };
-          const priorKey = `${year - 1}-Q${quarter}`;
-          const currentCount = metrics.quarterlyTrend.find(q => q.key === selectedQuarterKey)?.count || 0;
-          const priorCount = metrics.quarterlyTrend.find(q => q.key === priorKey)?.count || 0;
-          const change = priorCount ? (((currentCount - priorCount) / priorCount) * 100).toFixed(0) : null;
-          const currentLabel = `Q${quarter} ${year}`;
-          const priorLabel = `Q${quarter} ${year - 1}`;
-          return (
-            <div>
-              <div className="flex items-end gap-3 mb-2">
-                {priorCount > 0 ? (
+        {/* Selected quarter card */}
+        <div className="it-card" style={{ padding: '18px 20px 16px' }}>
+          <div className="it-eyebrow">Selected quarter</div>
+          {selectedQ ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
+                {selectedQ.priorCount > 0 && (
                   <>
-                    <div>
-                      <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{priorLabel}</p>
-                      <p className="text-2xl font-light" style={{ color: 'var(--text-secondary)' }}>
-                        {priorCount.toLocaleString()}
-                      </p>
-                    </div>
-                    <p className="text-lg mb-1" style={{ color: 'var(--text-secondary)' }}>→</p>
+                    <span style={{ color: 'var(--ink3)', fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>
+                      {selectedQ.priorCount.toLocaleString()}
+                    </span>
+                    <span style={{ color: 'var(--ink4)', fontSize: 16 }}>→</span>
                   </>
-                ) : null}
-                <div>
-                  <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{currentLabel}</p>
-                  <p className="text-2xl font-light" style={{ color: 'var(--text-primary)' }}>
-                    {currentCount.toLocaleString()}
-                  </p>
-                </div>
+                )}
+                <span style={{ fontSize: 30, fontWeight: 500, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                  {selectedQ.currentCount.toLocaleString()}
+                </span>
               </div>
-              {change !== null && priorCount > 0 ? (
-                <p className={`text-xs font-medium ${parseInt(change) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {parseInt(change) > 0 ? '+' : ''}{change}% vs same quarter prior year
-                </p>
+              {selectedQ.change !== null && selectedQ.priorCount > 0 ? (
+                <div style={{ marginTop: 8, fontSize: 12.5, color: parseInt(selectedQ.change) > 0 ? 'var(--red)' : 'var(--green)' }}>
+                  {parseInt(selectedQ.change) > 0 ? '+' : ''}{selectedQ.change}% vs same quarter prior year
+                </div>
               ) : (
-                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>No prior year data available</p>
+                <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--ink3)' }}>
+                  No prior year data available
+                </div>
               )}
+              <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginTop: 6 }}>
+                {selectedQ.priorLabel} · {selectedQ.currentLabel}
+              </div>
+            </>
+          ) : (
+            <div style={{ marginTop: 6, fontSize: 13, color: 'var(--ink3)' }}>
+              Select a quarter below
             </div>
-          );
-        })()}
-      </div>
-        <MetricCard label="Avg resolution" value={`${avgResolutionDays}d`}
-          delta="Completed tickets" deltaDir="neutral" />
-        <MetricCard label="SLA breach rate" value={`${slaBreachRate}%`}
-          delta="First response breaches"
-          deltaDir={slaBreachRate > 10 ? 'up-bad' : 'down-good'} />
+          )}
+        </div>
+
+        {/* Avg resolution */}
+        <MetricCard
+          eyebrow="Avg resolution"
+          value={<>{avgResolutionDays}<span style={{ fontSize: 16, color: 'var(--ink3)', marginLeft: 2 }}>d</span></>}
+          foot="Completed tickets"
+        />
+
+        {/* SLA breach rate */}
+        <MetricCard
+          eyebrow="SLA breach rate"
+          value={<>{slaBreachRate}<span style={{ fontSize: 16, color: 'var(--ink3)', marginLeft: 2 }}>%</span></>}
+          foot="First response breaches"
+          footTone={slaBreachRate > 10 ? 'neg' : 'pos'}
+        />
       </div>
 
       {/* Quarterly trend chart */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-        className="rounded-xl p-6">
-        <div className="flex items-start justify-between mb-5">
+      <div className="it-card" style={{ padding: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              Quarterly ticket volume
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+            <div className="it-section-title">Quarterly ticket volume</div>
+            <div className="it-section-sub">
               Click a quarter to filter all views
               {selectedQLabel && ` · Selected: ${selectedQLabel}`}
-            </p>
+            </div>
           </div>
           <QuarterSelector
             quarters={quarterlyTrend}
@@ -139,22 +144,27 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter })
           />
         </div>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={quarterlyTrend} barGap={4}
+          <BarChart
+            data={quarterlyTrend}
+            barGap={4}
             onClick={(e) => e?.activePayload?.[0] && onSelectQuarter(e.activePayload[0].payload.key)}>
             <XAxis dataKey="label" tick={tickStyle} axisLine={false} tickLine={false} />
             <YAxis tick={tickStyle} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-            <Bar dataKey="count" name="Tickets" radius={[4,4,0,0]}
-              fill="#2563eb"
+            <Bar
+              dataKey="count"
+              name="Tickets"
+              radius={[4, 4, 0, 0]}
               style={{ cursor: 'pointer' }}
               shape={(props) => {
                 const { x, y, width, height, payload } = props;
-                const selected = payload.isSelected;
                 return (
-                  <rect x={x} y={y} width={width} height={height}
-                    fill={selected ? '#1d4ed8' : '#2563eb'}
-                    opacity={selected ? 1 : 0.65}
-                    rx={4} ry={4} />
+                  <rect
+                    x={x} y={y} width={width} height={height}
+                    fill={payload.isSelected ? '#1d4ed8' : '#2563eb'}
+                    opacity={payload.isSelected ? 1 : 0.65}
+                    rx={4} ry={4}
+                  />
                 );
               }}
             />
@@ -162,28 +172,31 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter })
         </ResponsiveContainer>
       </div>
 
-      {/* Issue type */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-        className="rounded-xl p-6">
-        <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-          Tickets by issue type
-        </p>
-        <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+      {/* Issue type donut */}
+      <div className="it-card" style={{ padding: 20 }}>
+        <div className="it-section-title">Tickets by issue type</div>
+        <div className="it-section-sub" style={{ marginBottom: 16 }}>
           {selectedQLabel || 'All available data'}
-        </p>
+        </div>
         <ResponsiveContainer width="100%" height={260}>
           <PieChart>
-            <Pie data={pieData} cx="40%" cy="50%" innerRadius={65} outerRadius={100}
+            <Pie
+              data={pieData}
+              cx="40%" cy="50%"
+              innerRadius={65} outerRadius={100}
               dataKey="value" paddingAngle={3}>
               {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
             </Pie>
-            <Legend layout="vertical" align="right" verticalAlign="middle"
+            <Legend
+              layout="vertical" align="right" verticalAlign="middle"
               iconSize={10} iconType="square"
-              formatter={(v) => <span style={{ color: '#6b7280', fontSize: 11 }}>{v}</span>} />
+              formatter={(v) => <span style={{ color: 'var(--ink3)', fontSize: 11 }}>{v}</span>}
+            />
             <Tooltip contentStyle={tooltipStyle} />
           </PieChart>
         </ResponsiveContainer>
       </div>
+
     </div>
   );
 }
