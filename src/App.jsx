@@ -24,8 +24,11 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#f4f5f7' }}>
       <TopBar lastSynced={lastSynced} loading={loading} onSync={sync} />
-      <NavTabs active={activeTab} onChange={setActiveTab} />
-
+      <NavTabs
+        active={activeTab}
+        onChange={setActiveTab}
+        aiUnactionedCount={0}
+      />
       <main className="flex-1 px-8 py-7">
         {loading && !rawData && (
           <div className="flex flex-col items-center justify-center h-64 gap-3">

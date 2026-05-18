@@ -1,18 +1,43 @@
-export function MetricCard({ label, value, delta, deltaDir }) {
-  const deltaColor =
-    deltaDir === 'up-bad' ? 'text-[var(--red)]' :
-    deltaDir === 'down-good' ? 'text-[var(--green)]' :
-    'text-[var(--text-secondary)]';
+export function MetricCard({ eyebrow, value, foot, footTone, subtext, children }) {
+  const footColor =
+    footTone === 'pos' ? 'var(--green)' :
+    footTone === 'neg' ? 'var(--red)' :
+    footTone === 'warn' ? 'var(--amber)' :
+    'var(--ink3)';
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-      className="rounded-xl p-5">
-      <p style={{ color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}
-        className="text-xs uppercase tracking-widest mb-3">{label}</p>
-      <p className="text-3xl font-light mb-2" style={{ color: 'var(--text-primary)' }}>{value}</p>
-      {delta && (
-        <p className={`text-xs font-medium ${deltaColor}`}>{delta}</p>
+    <div className="it-card" style={{ padding: '18px 20px 16px' }}>
+      <div className="it-eyebrow">{eyebrow}</div>
+      <div style={{
+        fontSize: 30,
+        fontWeight: 500,
+        lineHeight: 1.05,
+        letterSpacing: '-0.02em',
+        color: 'var(--ink)',
+        marginTop: 6,
+        fontVariantNumeric: 'tabular-nums'
+      }}>
+        {value}
+      </div>
+      {foot && (
+        <div style={{
+          marginTop: 8,
+          fontSize: 12.5,
+          color: footColor
+        }}>
+          {foot}
+        </div>
       )}
+      {subtext && (
+        <div className="it-mono" style={{
+          fontSize: 11,
+          color: 'var(--ink4)',
+          marginTop: 6
+        }}>
+          {subtext}
+        </div>
+      )}
+      {children}
     </div>
   );
 }

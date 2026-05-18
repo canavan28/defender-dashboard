@@ -1,24 +1,24 @@
-export function QuarterSelector({ quarters, selectedKey, onChange }) {
+export function QuarterSelector({ quarters, selectedKey, onChange, label = 'Filter by quarter:' }) {
   return (
-    <div className="flex gap-2 flex-wrap">
-      {quarters.map(q => (
-        <button
-          key={q.key}
-          onClick={() => onChange(q.key)}
-          style={{
-            fontSize: 11,
-            padding: '4px 12px',
-            borderRadius: 20,
-            border: `1px solid ${q.isSelected ? 'var(--accent)' : 'var(--border)'}`,
-            cursor: 'pointer',
-            background: q.isSelected ? 'var(--accent-dim)' : 'transparent',
-            color: q.isSelected ? 'var(--accent)' : 'var(--text-secondary)',
-            fontFamily: 'DM Mono, monospace',
-            fontWeight: q.isCurrentQuarter ? '600' : '400'
-          }}>
-          {q.label}{q.isCurrentQuarter ? ' ●' : ''}
-        </button>
-      ))}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 0' }}>
+      <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink3)', marginRight: 4 }}>
+        {label}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {quarters.map(q => {
+          const isActive = selectedKey === q.key;
+          const isCurrent = q.isCurrentQuarter;
+          return (
+            <button
+              key={q.key}
+              onClick={() => onChange(q.key)}
+              className={`it-pill${isActive ? ' active' : ''}${isCurrent ? ' current' : ''}`}
+            >
+              {q.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
