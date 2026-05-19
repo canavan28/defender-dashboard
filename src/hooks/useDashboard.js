@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
-import { api } from '../utils/api';
+import { createApi } from '../utils/api';
 import { getQuarterKey } from './useTicketMetrics';
 
-export function useDashboard() {
+export function useDashboard(getToken) {
   const [rawData, setRawData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fullRefreshStep, setFullRefreshStep] = useState(null);
@@ -10,13 +10,15 @@ export function useDashboard() {
   const [lastSynced, setLastSynced] = useState(null);
   const [selectedQuarterKey, setSelectedQuarterKey] = useState(null);
 
+  const api = createApi(getToken);
+
   const processResponse = (response) => {
     setRawData({
-      allTickets: response.allTickets || [],
-      completedTickets: response.completedTickets || [],
-      openTickets: response.openTickets || [],
-      timeEntries: response.timeEntries || [],
-      resources: response.resources || [],
+      allTickets: [...(response.allTickets || [])],
+      completedTickets: [...(response.completedTickets || [])],
+      openTickets: [...(response.openTickets || [])],
+      timeEntries: [...(response.timeEntries || [])],
+      resources: [...(response.resources || [])],
       excludeResources: response.excludeResources || [],
       issueTypeMap: response.issueTypeMap || {},
       subIssueMap: response.subIssueMap || {},
@@ -37,20 +39,17 @@ export function useDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   const fullRefresh = useCallback(async () => {
     setError(null);
     try {
-      // Step 1 — rebuild tickets
       setFullRefreshStep('Rebuilding ticket history... this may take a few minutes');
       await api.tickets.refreshTickets();
 
-      // Step 2 — rebuild time entries
       setFullRefreshStep('Rebuilding time entry history...');
       await api.tickets.refreshTimeEntries();
 
-      // Step 3 — fetch merged data
       setFullRefreshStep('Loading updated data...');
       const response = await api.tickets.all();
       processResponse(response);
@@ -59,17 +58,11 @@ export function useDashboard() {
     } finally {
       setFullRefreshStep(null);
     }
-  }, []);
+  }, [getToken]);
 
   return {
-    rawData,
-    loading,
-    fullRefreshStep,
-    error,
-    lastSynced,
-    selectedQuarterKey,
-    setSelectedQuarterKey,
-    sync,
-    fullRefresh
+    rawData, loading, fullRefreshStep, error,
+    lastSynced, selectedQuarterKey, setSelectedQuarterKey,
+    sync, fullRefresh
   };
 }

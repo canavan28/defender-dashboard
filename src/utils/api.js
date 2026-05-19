@@ -1,10 +1,10 @@
 const BASE_URL = import.meta.env.VITE_API_URL;
-const API_KEY  = import.meta.env.VITE_API_KEY;
 
-async function apiFetch(path) {
+async function apiFetch(path, getToken) {
+  const token = await getToken();
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: {
-      'Authorization': `Bearer ${API_KEY}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     }
   });
@@ -12,10 +12,11 @@ async function apiFetch(path) {
   return res.json();
 }
 
-async function apiFetchLongRunning(path) {
+async function apiFetchLongRunning(path, getToken) {
+  const token = await getToken();
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: {
-      'Authorization': `Bearer ${API_KEY}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
     keepalive: true
@@ -24,10 +25,12 @@ async function apiFetchLongRunning(path) {
   return res.json();
 }
 
-export const api = {
-  tickets: {
-    all:                () => apiFetch('/api/tickets/all'),
-    refreshTickets:     () => apiFetchLongRunning('/api/tickets/refreshtickets'),
-    refreshTimeEntries: () => apiFetchLongRunning('/api/tickets/refreshtimeentries')
-  }
-};
+export function createApi(getToken) {
+  return {
+    tickets: {
+      all:                () => apiFetch('/api/tickets/all', getToken),
+      refreshTickets:     () => apiFetchLongRunning('/api/tickets/refreshtickets', getToken),
+      refreshTimeEntries: () => apiFetchLongRunning('/api/tickets/refreshtimeentries', getToken)
+    }
+  };
+}
