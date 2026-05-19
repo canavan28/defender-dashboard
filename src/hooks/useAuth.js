@@ -52,7 +52,6 @@ export function useAuth() {
             const response = await msalInstance.acquireTokenSilent({
                 ...loginRequest,
                 account: activeAccount,
-                forceRefresh: true
             });
             return response.accessToken;
         } catch (err) {
