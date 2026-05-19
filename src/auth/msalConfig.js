@@ -22,7 +22,12 @@ export const msalConfig = {
 };
 
 export const loginRequest = {
-  scopes: ['openid', 'profile', 'email']
+  scopes: [
+    'openid',
+    'profile',
+    'email',
+    `api://${import.meta.env.VITE_AZURE_CLIENT_ID}/access_as_user`
+  ]
 };
 
 export const msalInstance = new PublicClientApplication(msalConfig);
