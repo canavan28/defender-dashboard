@@ -6,12 +6,16 @@ import { TechCapacity } from './modules/TechCapacity';
 import { TimeAnalytics } from './modules/TimeAnalytics';
 import { SLAHealth } from './modules/SLAHealth';
 import { StaffingSignals } from './modules/StaffingSignals';
+import { AIReview } from './modules/AIReview';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
 import { useAuth } from './hooks/useAuth';
+import { useAIReview } from './hooks/useAIReview';
+import { createApi } from './utils/api';
 
 export default function App() {
   const { account, loading: authLoading, error: authError, logout, getToken } = useAuth();
+  const api = account ? createApi(getToken) : null;
 
   const {
     rawData, loading, fullRefreshStep, error,
@@ -20,13 +24,15 @@ export default function App() {
   } = useDashboard(getToken);
 
   const metrics = useTicketMetrics(rawData, selectedQuarterKey);
+  const aiReview = useAIReview(api || {});
   const [activeTab, setActiveTab] = useState('Ticket overview');
 
   useEffect(() => {
     if (account) sync();
   }, [account]);
 
-  // Auth loading state
+  const unactionedCount = aiReview.flags.filter(f => f.action === 'unactioned').length;
+
   if (authLoading) {
     return (
       <div style={{
@@ -35,7 +41,8 @@ export default function App() {
         background: 'var(--bg)'
       }}>
         <div style={{ textAlign: 'center' }}>
-          <img src="/infotank-logo.png" alt="InfoTank" style={{ height: 32, marginBottom: 20 }} />
+          <img src="/infotank-logo.png" alt="InfoTank"
+            style={{ height: 32, marginBottom: 20 }} />
           <p className="it-mono" style={{ fontSize: 13, color: 'var(--ink3)' }}>
             Signing in...
           </p>
@@ -44,7 +51,6 @@ export default function App() {
     );
   }
 
-  // Auth error state
   if (authError) {
     return (
       <div style={{
@@ -74,7 +80,7 @@ export default function App() {
       <NavTabs
         active={activeTab}
         onChange={setActiveTab}
-        aiUnactionedCount={0}
+        aiUnactionedCount={unactionedCount}
       />
 
       <main style={{ flex: 1, padding: '20px 24px 28px' }}>
@@ -144,6 +150,10 @@ export default function App() {
               />
             )}
           </>
+        )}
+
+        {activeTab === 'AI Review' && (
+          <AIReview aiReview={aiReview} />
         )}
       </main>
     </div>
