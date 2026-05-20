@@ -15,7 +15,7 @@ import { createApi } from './utils/api';
 
 export default function App() {
   const { account, loading: authLoading, error: authError, logout, getToken } = useAuth();
-  const api = account ? createApi(getToken) : null;
+  const api = createApi(getToken);
 
   const {
     rawData, loading, fullRefreshStep, error,
@@ -24,7 +24,7 @@ export default function App() {
   } = useDashboard(getToken);
 
   const metrics = useTicketMetrics(rawData, selectedQuarterKey);
-  const aiReview = useAIReview(api || {});
+  const aiReview = useAIReview(api);
   const [activeTab, setActiveTab] = useState('Ticket overview');
 
   useEffect(() => {

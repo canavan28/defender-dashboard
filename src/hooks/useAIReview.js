@@ -12,6 +12,7 @@ export function useAIReview(api) {
   const [loaded, setLoaded] = useState(false);
 
   const loadStatus = useCallback(async () => {
+    if (!api?.aiReview) return;
     try {
       const [status, companiesRes] = await Promise.all([
         api.aiReview.status(),
@@ -30,6 +31,7 @@ export function useAIReview(api) {
   }, []);
 
   const runReview = useCallback(async () => {
+    if (!api?.aiReview) return;
     setRunning(true);
     setError(null);
     setRunState({ progress: 0, phase: 0 });
