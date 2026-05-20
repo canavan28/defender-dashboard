@@ -733,7 +733,7 @@ export function AIReview({ aiReview }) {
                     </div>
                 </div>
             ) : (
-                <div className="it-card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div className="it-card" style={{ padding: 0, overflow: 'visible' }}>
                     {/* List header */}
                     <div style={{
                         display: 'grid',
