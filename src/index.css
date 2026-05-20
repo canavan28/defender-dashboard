@@ -189,7 +189,7 @@ button { font-family: inherit; }
 .action-menu {
   position: absolute;
   right: 0;
-  top: calc(100% + 4px);
+  bottom: calc(100% + 4px);
   background: white;
   border: 1px solid var(--border);
   border-radius: 8px;
