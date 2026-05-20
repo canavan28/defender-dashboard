@@ -62,7 +62,7 @@ export function createApi(getToken) {
     aiReview: {
       status:           () => apiFetch('/api/aireview/status', getToken),
       companies:        () => apiFetch('/api/aireview/companies', getToken),
-      run:              () => apiFetchLongRunning('/api/aireview/run', getToken),
+      run:              () => apiPost('/api/aireview/run', {}, getToken),
       action:           (ticketId, action) => apiPost('/api/aireview/action', { ticketId, action }, getToken),
       addExclusion:     (companyId, companyName, reason) => apiPost('/api/aireview/exclusions', { companyId, companyName, reason }, getToken),
       removeExclusion:  (companyId) => apiDelete(`/api/aireview/exclusions/${companyId}`, getToken)
