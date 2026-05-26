@@ -567,7 +567,6 @@ export function AIReview({ aiReview, initialSevFilter }) {
     });
     const [showActioned, setShowActioned] = useState(false);
     const [sort, setSort] = useState('severity');
-    const [showActioned, setShowActioned] = useState(false);
     const [expandedId, setExpandedId] = useState(null);
     const [openMenu, setOpenMenu] = useState(null);
     const [exclusionOpen, setExclusionOpen] = useState(false);
