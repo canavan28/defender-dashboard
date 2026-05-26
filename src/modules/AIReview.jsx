@@ -551,7 +551,7 @@ function ExclusionPanel({ exclusions, companies, onClose, onAdd, onRemove }) {
     );
 }
 
-export function AIReview({ aiReview }) {
+export function AIReview({ aiReview, initialSevFilter }) {
     const {
         flags, exclusions, companies,
         lastRun, reviewStats, running, runState,
@@ -560,7 +560,12 @@ export function AIReview({ aiReview }) {
         addExclusion, removeExclusion
     } = aiReview;
 
-    const [filters, setFilters] = useState({ sev: 'all', type: 'all', company: '' });
+    const [filters, setFilters] = useState({
+        sev: initialSevFilter || 'all',
+        type: 'all',
+        company: ''
+    });
+    const [showActioned, setShowActioned] = useState(false);
     const [sort, setSort] = useState('severity');
     const [showActioned, setShowActioned] = useState(false);
     const [expandedId, setExpandedId] = useState(null);
@@ -767,96 +772,96 @@ export function AIReview({ aiReview }) {
                                         alignItems: 'center', cursor: 'pointer'
                                     }}>
                                     <div><SeverityPill sev={f.sev} /></div>
-                                    <a    
-                                    href={f.ticketUrl} target="_blank" rel="noreferrer"
-                                    className="it-mono"
-                                    onClick={e => e.stopPropagation()}
-                                    style={{
-                                        fontSize: 12.5, color: 'var(--blue)',
-                                        textDecoration: 'none', fontWeight: 500,
-                                        display: 'inline-flex', alignItems: 'center', gap: 4
-                                    }}>
-                                    {f.id}
-                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
-                                        stroke="currentColor" strokeWidth="2" style={{ opacity: 0.6 }}>
-                                        <path d="M7 17L17 7M9 7h8v8" />
-                                    </svg>
-                                </a>
-                                <div style={{ minWidth: 0 }}>
-                                    <div style={{
-                                        fontSize: 13, color: 'var(--ink)', fontWeight: 500,
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                    }}>
-                                        {f.title}
-                                    </div>
-                                    <div style={{
-                                        fontSize: 12, color: 'var(--ink3)', marginTop: 2,
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                    }}>
-                                        {f.summary}
-                                    </div>
-                                </div>
-                                <div style={{
-                                    fontSize: 12.5, color: 'var(--ink2)',
-                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                }}>
-                                    {f.company}
-                                </div>
-                                <div><FlagTypePill type={f.flagType} /></div>
-                                <div><ActionPill action={f.action} /></div>
-                                <div style={{
-                                    position: 'relative', display: 'flex',
-                                    justifyContent: 'flex-end', gap: 6
-                                }} onClick={e => e.stopPropagation()}>
-                                    <button
-                                        className="it-btn sm"
-                                        onClick={() => setOpenMenu(openMenu === f.id ? null : f.id)}
-                                        style={{ borderColor: 'var(--border)' }}>
-                                        Action
-                                        <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
-                                            stroke="currentColor" strokeWidth="1.7">
-                                            <path d="M3 4.5l3 3 3-3" />
+                                    <a
+                                        href={f.ticketUrl} target="_blank" rel="noreferrer"
+                                        className="it-mono"
+                                        onClick={e => e.stopPropagation()}
+                                        style={{
+                                            fontSize: 12.5, color: 'var(--blue)',
+                                            textDecoration: 'none', fontWeight: 500,
+                                            display: 'inline-flex', alignItems: 'center', gap: 4
+                                        }}>
+                                        {f.id}
+                                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" strokeWidth="2" style={{ opacity: 0.6 }}>
+                                            <path d="M7 17L17 7M9 7h8v8" />
                                         </svg>
-                                    </button>
-                                    {openMenu === f.id && (
-                                        <ActionMenu
-                                            value={f.action}
-                                            onChange={v => setAction(f.id, v)}
-                                            onClose={() => setOpenMenu(null)}
-                                        />
-                                    )}
+                                    </a>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{
+                                            fontSize: 13, color: 'var(--ink)', fontWeight: 500,
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                        }}>
+                                            {f.title}
+                                        </div>
+                                        <div style={{
+                                            fontSize: 12, color: 'var(--ink3)', marginTop: 2,
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                        }}>
+                                            {f.summary}
+                                        </div>
+                                    </div>
+                                    <div style={{
+                                        fontSize: 12.5, color: 'var(--ink2)',
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                    }}>
+                                        {f.company}
+                                    </div>
+                                    <div><FlagTypePill type={f.flagType} /></div>
+                                    <div><ActionPill action={f.action} /></div>
+                                    <div style={{
+                                        position: 'relative', display: 'flex',
+                                        justifyContent: 'flex-end', gap: 6
+                                    }} onClick={e => e.stopPropagation()}>
+                                        <button
+                                            className="it-btn sm"
+                                            onClick={() => setOpenMenu(openMenu === f.id ? null : f.id)}
+                                            style={{ borderColor: 'var(--border)' }}>
+                                            Action
+                                            <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
+                                                stroke="currentColor" strokeWidth="1.7">
+                                                <path d="M3 4.5l3 3 3-3" />
+                                            </svg>
+                                        </button>
+                                        {openMenu === f.id && (
+                                            <ActionMenu
+                                                value={f.action}
+                                                onChange={v => setAction(f.id, v)}
+                                                onClose={() => setOpenMenu(null)}
+                                            />
+                                        )}
+                                    </div>
                                 </div>
+                                {isExpanded && <FlagRowDetail flag={f} />}
                             </div>
-                { isExpanded && <FlagRowDetail flag={f} /> }
-              </div>
-            );
-          })}
+                        );
+                    })}
 
-            {visible.length === 0 && (
-                <div style={{ padding: 50, textAlign: 'center', color: 'var(--ink3)' }}>
-                    <div className="it-mono" style={{ fontSize: 12, marginBottom: 6 }}>
-                        NO MATCHING FLAGS
-                    </div>
-                    <div style={{ fontSize: 13 }}>
-                        Try clearing filters or checking "Show actioned".
-                    </div>
+                    {visible.length === 0 && (
+                        <div style={{ padding: 50, textAlign: 'center', color: 'var(--ink3)' }}>
+                            <div className="it-mono" style={{ fontSize: 12, marginBottom: 6 }}>
+                                NO MATCHING FLAGS
+                            </div>
+                            <div style={{ fontSize: 13 }}>
+                                Try clearing filters or checking "Show actioned".
+                            </div>
+                        </div>
+                    )}
                 </div>
-            )}
-        </div>
-    )
-}
+            )
+            }
 
-{
-    exclusionOpen && (
-        <ExclusionPanel
-            exclusions={exclusions}
-            companies={companies}
-            onClose={() => setExclusionOpen(false)}
-            onAdd={addExclusion}
-            onRemove={removeExclusion}
-        />
-    )
-}
-    </div >
-  );
+            {
+                exclusionOpen && (
+                    <ExclusionPanel
+                        exclusions={exclusions}
+                        companies={companies}
+                        onClose={() => setExclusionOpen(false)}
+                        onAdd={addExclusion}
+                        onRemove={removeExclusion}
+                    />
+                )
+            }
+        </div >
+    );
 }

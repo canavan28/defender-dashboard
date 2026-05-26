@@ -369,6 +369,8 @@ const teSource = filterTimeEntries(
         priorLabel: `Q${lastCompleteQNum} ${lastCompleteQYear - 1}`
       }
     },
-    resourceMap
+    resourceMap,
+    issueTypeMap: rawData.issueTypeMap,
+    subIssueMap: rawData.subIssueMap
   };
 }

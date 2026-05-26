@@ -4,16 +4,23 @@ import { QuarterSelector } from '../components/QuarterSelector';
 
 const COLORS = ['#2563eb', '#e09a3a', '#16a34a', '#dc2626', '#9b72f7', '#f76f4f', '#4fd4c4', '#f7c94f'];
 
-export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter }) {
+export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, criticalFlagsCount = 0, onCriticalFlagsClick }) {
   if (!metrics) return null;
   const {
     ytd, quarterlyTrend,
     avgResolutionDays, slaBreachRate,
-    byIssueType, selectedQLabel
+    byIssueType, selectedQLabel,
+    issueTypeMap, subIssueMap
   } = metrics;
 
   const [hoverBar, setHoverBar] = useState(null);
-  const [hoverSlice, setHoverSlice] = useState(null);
+  const [expandedIssues, setExpandedIssues] = useState(new Set());
+  const toggleIssue = (name) => {
+    const s = new Set(expandedIssues);
+    s.has(name) ? s.delete(name) : s.add(name);
+    setExpandedIssues(s);
+  };
+ 
 
   // Selected quarter calculations
   const selectedQ = selectedQuarterKey ? (() => {
@@ -42,32 +49,12 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter })
   const barSlot = barCount > 0 ? innerW / barCount : innerW;
   const barW = Math.min(barSlot * 0.6, 48);
 
-  // Donut chart
+  // Issue List
   const issueEntries = Object.entries(byIssueType || {}).sort((a, b) => b[1] - a[1]);
-  const top7 = issueEntries.slice(0, 7);
-  const otherCount = issueEntries.slice(7).reduce((s, [, v]) => s + v, 0);
-  const donutData = [
-    ...top7.map(([name, value]) => ({ name, value })),
-    ...(otherCount > 0 ? [{ name: 'Other', value: otherCount }] : [])
-  ];
-  const totalIssues = donutData.reduce((s, d) => s + d.value, 0);
+  const totalIssues = issueEntries.reduce((s, [, v]) => s + v, 0);
+  const { issueTypeMap, subIssueMap } = rawData || {};
   const cx = 110, cy = 110, r = 78, rInner = 56;
-  let accAngle = -Math.PI / 2;
-  const slices = donutData.map((item, i) => {
-    const angle = totalIssues > 0 ? (item.value / totalIssues) * Math.PI * 2 : 0;
-    const a0 = accAngle, a1 = accAngle + angle;
-    accAngle = a1;
-    const x0 = cx + Math.cos(a0) * r, y0 = cy + Math.sin(a0) * r;
-    const x1 = cx + Math.cos(a1) * r, y1 = cy + Math.sin(a1) * r;
-    const xi1 = cx + Math.cos(a1) * rInner, yi1 = cy + Math.sin(a1) * rInner;
-    const xi0 = cx + Math.cos(a0) * rInner, yi0 = cy + Math.sin(a0) * rInner;
-    const large = angle > Math.PI ? 1 : 0;
-    const d = `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1} L ${xi1} ${yi1} A ${rInner} ${rInner} 0 ${large} 0 ${xi0} ${yi0} Z`;
-    return { ...item, d, color: COLORS[i % COLORS.length] };
-  });
-
-  const hoveredSlice = hoverSlice !== null ? slices[hoverSlice] : null;
-
+  
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -133,12 +120,34 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter })
           )}
         </div>
 
-        {/* Avg resolution */}
-        <MetricCard
-          eyebrow="Avg resolution"
-          value={<>{avgResolutionDays}<span style={{ fontSize: 16, color: 'var(--ink3)', marginLeft: 2 }}>d</span></>}
-          foot="Completed tickets"
-        />
+        {/* Critical flags */}
+        <div
+          className="it-card"
+          onClick={onCriticalFlagsClick}
+          style={{
+            padding: '18px 20px 16px',
+            cursor: criticalFlagsCount > 0 ? 'pointer' : 'default',
+            transition: 'box-shadow 0.15s',
+            ...(criticalFlagsCount > 0 ? {
+              borderColor: '#fecaca',
+              boxShadow: '0 0 0 1px #fecaca'
+            } : {})
+          }}
+          onMouseEnter={e => { if (criticalFlagsCount > 0) e.currentTarget.style.boxShadow = '0 4px 12px rgba(220,38,38,0.15)'; }}
+          onMouseLeave={e => { if (criticalFlagsCount > 0) e.currentTarget.style.boxShadow = '0 0 0 1px #fecaca'; }}
+        >
+          <div className="it-eyebrow">Critical AI flags</div>
+          <div style={{
+            fontSize: 30, fontWeight: 500, lineHeight: 1.05,
+            letterSpacing: '-0.02em', marginTop: 6,
+            color: criticalFlagsCount > 0 ? 'var(--red)' : 'var(--ink)'
+          }}>
+            {criticalFlagsCount}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12.5, color: criticalFlagsCount > 0 ? 'var(--red)' : 'var(--ink3)' }}>
+            {criticalFlagsCount > 0 ? 'Click to review →' : 'No critical flags'}
+          </div>
+        </div>
 
         {/* SLA breach rate */}
         <MetricCard
@@ -149,7 +158,7 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter })
         />
       </div>
 
-      {/* Quarterly bar chart + donut side by side */}
+      {/* Quarterly bar chart + issue type list side by side */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 14 }}>
 
         {/* Bar chart */}
@@ -229,72 +238,94 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter })
           </svg>
         </div>
 
-        {/* Donut */}
+        {/* Issue type list */}
         <div className="it-card" style={{ padding: 20 }}>
-          <div className="it-section-title">By issue type</div>
-          <div className="it-section-sub" style={{ marginBottom: 12 }}>
-            {selectedQLabel || 'All available data'}
+          <div className="it-section-title">Tickets by issue type</div>
+          <div className="it-section-sub" style={{ marginBottom: 16 }}>
+            {selectedQLabel || 'All available data'} · Click to expand sub-issues
           </div>
-          <div style={{ position: 'relative' }}>
-            <svg width="220" height="220" viewBox="0 0 220 220" style={{ display: 'block', margin: '0 auto' }}>
-              {slices.map((slice, i) => (
-                <path
-                  key={slice.name}
-                  d={slice.d}
-                  fill={slice.color}
-                  opacity={hoverSlice === null || hoverSlice === i ? 1 : 0.4}
-                  style={{ cursor: 'pointer', transition: 'opacity 0.15s' }}
-                  onMouseEnter={() => setHoverSlice(i)}
-                  onMouseLeave={() => setHoverSlice(null)}
-                />
-              ))}
-              {/* Center text */}
-              {hoveredSlice ? (
-                <>
-                  <text x={cx} y={cy - 8} textAnchor="middle"
-                    fontSize="11" fontFamily="DM Mono, monospace"
-                    fill="var(--ink3)">{hoveredSlice.value.toLocaleString()}</text>
-                  <text x={cx} y={cy + 8} textAnchor="middle"
-                    fontSize="10" fontFamily="DM Mono, monospace"
-                    fill="var(--ink4)">{totalIssues > 0 ? ((hoveredSlice.value / totalIssues) * 100).toFixed(1) : 0}%</text>
-                </>
-              ) : (
-                <>
-                  <text x={cx} y={cy - 8} textAnchor="middle"
-                    fontSize="18" fontWeight="500"
-                    fontFamily="DM Mono, monospace"
-                    fill="var(--ink)">{totalIssues.toLocaleString()}</text>
-                  <text x={cx} y={cy + 10} textAnchor="middle"
-                    fontSize="10" fontFamily="DM Mono, monospace"
-                    fill="var(--ink4)">tickets</text>
-                </>
-              )}
-            </svg>
+
+          {/* Header */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 80px 56px',
+            gap: 12, padding: '6px 4px',
+            borderBottom: '1px solid var(--border)',
+            marginBottom: 4
+          }}>
+            <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>ISSUE TYPE</div>
+            <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>TICKETS</div>
+            <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>%</div>
           </div>
-          {/* Legend */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 8 }}>
-            {slices.map((slice, i) => (
-              <div key={slice.name}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  opacity: hoverSlice === null || hoverSlice === i ? 1 : 0.4,
-                  cursor: 'pointer', transition: 'opacity 0.15s'
-                }}
-                onMouseEnter={() => setHoverSlice(i)}
-                onMouseLeave={() => setHoverSlice(null)}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: 2,
-                  background: slice.color, flexShrink: 0
-                }} />
-                <span style={{ fontSize: 11.5, color: 'var(--ink3)', flex: 1 }}>{slice.name}</span>
-                <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>
-                  {slice.value.toLocaleString()}
-                </span>
+
+          {issueEntries.map(([name, count], idx) => {
+            const isOpen = expandedIssues.has(name);
+            const pct = totalIssues > 0 ? ((count / totalIssues) * 100).toFixed(1) : 0;
+            const color = COLORS[idx % COLORS.length];
+
+            // Find sub-issues for this issue type
+            const issueKey = Object.entries(issueTypeMap || {}).find(([, v]) => v === name)?.[0];
+            const subIssues = issueKey ? Object.entries(byIssueType || {})
+              .filter(([k]) => {
+                const sub = subIssueMap?.[k];
+                return sub && String(sub.parent) === String(issueKey);
+              })
+              .sort((a, b) => b[1] - a[1]) : [];
+
+            const hasSubs = subIssues.length > 0;
+
+            return (
+              <div key={name}>
+                <div
+                  onClick={() => hasSubs && toggleIssue(name)}
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1fr 80px 56px',
+                    gap: 12, padding: '9px 4px', alignItems: 'center',
+                    borderBottom: '1px solid var(--border)',
+                    cursor: hasSubs ? 'pointer' : 'default'
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      fontSize: 10, color: 'var(--ink3)',
+                      visibility: hasSubs ? 'visible' : 'hidden',
+                      transform: isOpen ? 'rotate(90deg)' : 'rotate(0)',
+                      transition: 'transform 0.15s', display: 'inline-block'
+                    }}>▶</span>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, color: 'var(--ink)' }}>{name}</span>
+                  </div>
+                  <div className="it-mono" style={{ fontSize: 12.5, color: 'var(--ink)', textAlign: 'right' }}>
+                    {count.toLocaleString()}
+                  </div>
+                  <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)', textAlign: 'right' }}>
+                    {pct}%
+                  </div>
+                </div>
+
+                {isOpen && subIssues.map(([subKey, subCount]) => {
+                  const subLabel = subIssueMap?.[subKey]?.label || subKey;
+                  const subPct = totalIssues > 0 ? ((subCount / totalIssues) * 100).toFixed(1) : 0;
+                  return (
+                    <div key={subKey} style={{
+                      display: 'grid', gridTemplateColumns: '1fr 80px 56px',
+                      gap: 12, padding: '7px 4px 7px 32px', alignItems: 'center',
+                      borderBottom: '1px solid var(--border)',
+                      background: '#fafbfc'
+                    }}>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>└ {subLabel}</div>
+                      <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink2)', textAlign: 'right' }}>
+                        {subCount.toLocaleString()}
+                      </div>
+                      <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)', textAlign: 'right' }}>
+                        {subPct}%
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
     </div>
-  );
+  )
 }

@@ -26,12 +26,20 @@ export default function App() {
   const metrics = useTicketMetrics(rawData, selectedQuarterKey);
   const aiReview = useAIReview(api);
   const [activeTab, setActiveTab] = useState('Ticket overview');
+  const [aiFilter, setAiFilter] = useState(null);
 
-  useEffect(() => {
-    if (account) sync();
-  }, [account]);
+  useEffect(() => { if (account) sync(); }, [account]);
 
   const unactionedCount = aiReview.flags.filter(f => f.action === 'unactioned').length;
+  const criticalUnactionedCount = aiReview.flags.filter(
+    f => f.action === 'unactioned' && f.sev === 'critical'
+  ).length;
+
+  // Handle click-through from critical flags card to AI Review tab
+  const handleCriticalFlagsClick = () => {
+    setAiFilter('critical');
+    setActiveTab('AI Review');
+  };
 
   if (authLoading) {
     return (
@@ -41,11 +49,8 @@ export default function App() {
         background: 'var(--bg)'
       }}>
         <div style={{ textAlign: 'center' }}>
-          <img src="/infotank-logo.png" alt="InfoTank"
-            style={{ height: 32, marginBottom: 20 }} />
-          <p className="it-mono" style={{ fontSize: 13, color: 'var(--ink3)' }}>
-            Signing in...
-          </p>
+          <img src="/infotank-logo.png" alt="InfoTank" style={{ height: 32, marginBottom: 20 }} />
+          <p className="it-mono" style={{ fontSize: 13, color: 'var(--ink3)' }}>Signing in...</p>
         </div>
       </div>
     );
@@ -76,10 +81,14 @@ export default function App() {
         onSync={sync}
         account={account}
         onLogout={logout}
+        cacheInfo={rawData?.cacheInfo}
       />
       <NavTabs
         active={activeTab}
-        onChange={setActiveTab}
+        onChange={(tab) => {
+          setActiveTab(tab);
+          if (tab !== 'AI Review') setAiFilter(null);
+        }}
         aiUnactionedCount={unactionedCount}
       />
 
@@ -118,6 +127,8 @@ export default function App() {
                 metrics={metrics}
                 selectedQuarterKey={selectedQuarterKey}
                 onSelectQuarter={setSelectedQuarterKey}
+                criticalFlagsCount={criticalUnactionedCount}
+                onCriticalFlagsClick={handleCriticalFlagsClick}
               />
             )}
             {activeTab === 'Tech capacity' && (
@@ -153,7 +164,7 @@ export default function App() {
         )}
 
         {activeTab === 'AI Review' && (
-          <AIReview aiReview={aiReview} />
+          <AIReview aiReview={aiReview} initialSevFilter={aiFilter} />
         )}
       </main>
     </div>

@@ -1,6 +1,10 @@
-export function TopBar({ lastSynced, loading, onSync, account, onLogout }) {
+export function TopBar({ lastSynced, loading, onSync, account, onLogout, cacheInfo }) {
   const time = lastSynced
     ? lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  const historicalDate = cacheInfo?.historicalBuiltAt
+    ? new Date(cacheInfo.historicalBuiltAt).toLocaleDateString([], { month: 'short', day: 'numeric' })
     : null;
 
   return (
@@ -20,8 +24,9 @@ export function TopBar({ lastSynced, loading, onSync, account, onLogout }) {
             Executive Dashboard
           </div>
           <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>
-            Executive Operations · AutoTask
+            AutoTask
             {time && ` · Synced ${time}`}
+            {historicalDate && ` · History from ${historicalDate}`}
           </div>
         </div>
       </div>
@@ -37,8 +42,7 @@ export function TopBar({ lastSynced, loading, onSync, account, onLogout }) {
                 {account.username}
               </div>
             </div>
-            <button onClick={onLogout} className="it-btn ghost it-btn sm"
-              title="Sign out">
+            <button onClick={onLogout} className="it-btn ghost it-btn sm" title="Sign out">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth="2">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>

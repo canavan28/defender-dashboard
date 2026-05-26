@@ -3,7 +3,7 @@ import { QuarterSelector } from '../components/QuarterSelector';
 
 export function TechCapacity({ metrics, selectedQuarterKey, onSelectQuarter }) {
   if (!metrics) return null;
-  const { openByTechList, closedByTechList, selectedQLabel, quarterlyTrend, avgOpenAge } = metrics;
+  const { openByTechList, closedByTechList, selectedQLabel, quarterlyTrend, avgOpenAge, avgResolutionDays } = metrics;
 
   const maxOpen = Math.max(24, ...(openByTechList.map(t => t.count)));
   const maxClosed = closedByTechList[0]?.count || 1;
@@ -21,7 +21,7 @@ export function TechCapacity({ metrics, selectedQuarterKey, onSelectQuarter }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
         <MetricCard eyebrow="Active technicians" value={activeCount}
           foot="With open tickets" />
         <MetricCard eyebrow="Avg open tickets" value={avgOpen}
@@ -31,6 +31,9 @@ export function TechCapacity({ metrics, selectedQuarterKey, onSelectQuarter }) {
           value={<>{avgOpenAge}<span style={{ fontSize: 16, color: 'var(--ink3)', marginLeft: 2 }}>d</span></>}
           foot="Days since created"
           footTone={avgOpenAge > 7 ? 'warn' : 'pos'} />
+        <MetricCard eyebrow="Avg resolution"
+          value={<>{avgResolutionDays}<span style={{ fontSize: 16, color: 'var(--ink3)', marginLeft: 2 }}>d</span></>}
+          foot="Completed tickets" />
       </div>
 
       {/* Quarter selector */}
