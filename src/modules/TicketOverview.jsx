@@ -52,9 +52,7 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
   // Issue List
   const issueEntries = Object.entries(byIssueType || {}).sort((a, b) => b[1] - a[1]);
   const totalIssues = issueEntries.reduce((s, [, v]) => s + v, 0);
-  const { issueTypeMap, subIssueMap } = rawData || {};
-  const cx = 110, cy = 110, r = 78, rInner = 56;
-  
+    
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
