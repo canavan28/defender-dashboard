@@ -37,6 +37,9 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     issueTypeMap, subIssueMap, companyMap
   } = rawData;
 
+  console.log('[Debug] companyMap sample:', JSON.stringify(Object.entries(companyMap || {}).slice(0, 3)));
+console.log('[Debug] ticket companyID sample:', JSON.stringify(allTickets.slice(0, 3).map(t => ({ id: t.companyID, type: typeof t.companyID }))));
+
   const now = new Date();
 
   // ── Resource map ────────────────────────────────────────────────────────────
