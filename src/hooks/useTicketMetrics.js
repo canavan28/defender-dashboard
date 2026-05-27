@@ -34,7 +34,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
   const {
     allTickets, completedTickets, openTickets,
     timeEntries, resources, excludeResources,
-    issueTypeMap, subIssueMap
+    issueTypeMap, subIssueMap, companyMap
   } = rawData;
 
   const now = new Date();
@@ -182,7 +182,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
   // ── Tickets by company (with issue type sub-rows) ─────────────────────────
   const byCompanyRaw = {};
   issueSource.forEach(t => {
-    const company = t.companyName || 'Unknown';
+    const company = (companyMap && companyMap[t.companyID]) || 'Unknown';
     if (!byCompanyRaw[company]) byCompanyRaw[company] = { count: 0, issueTypes: {} };
     byCompanyRaw[company].count += 1;
     if (t.issueType) {
@@ -314,7 +314,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
   const hoursByCompanyRaw = {};
   teSource.forEach(te => {
     const ticket = ticketMap[te.ticketID];
-    const company = ticket?.companyName || 'Unknown';
+    const company = (companyMap && ticket && companyMap[ticket.companyID]) || 'Unknown';
     const hours = te.hoursWorked || 0;
     if (!hoursByCompanyRaw[company]) hoursByCompanyRaw[company] = { hours: 0, issueTypes: {} };
     hoursByCompanyRaw[company].hours += hours;
