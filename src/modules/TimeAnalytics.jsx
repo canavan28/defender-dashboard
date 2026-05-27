@@ -13,18 +13,28 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
   const {
     totalHours, totalBillableHours, totalNonBillableHours,
     overallBillablePct, notesCoverage, hoursByTechList,
-    hoursByIssueList, entryCount
+    hoursByIssueList, hoursByCompanyList, entryCount
   } = timeAnalytics;
 
   const [expanded, setExpanded] = useState(new Set());
+  const [expandedCompanies, setExpandedCompanies] = useState(new Set());
+  const [hoursView, setHoursView] = useState('issue'); // 'issue' | 'company'
+
   const toggle = (label) => {
     const s = new Set(expanded);
     s.has(label) ? s.delete(label) : s.add(label);
     setExpanded(s);
   };
 
+  const toggleCompany = (name) => {
+    const s = new Set(expandedCompanies);
+    s.has(name) ? s.delete(name) : s.add(name);
+    setExpandedCompanies(s);
+  };
+
   const maxTechHours = hoursByTechList[0]?.hours || 1;
   const maxIssueHours = hoursByIssueList[0]?.hours || 1;
+  const maxCompanyHours = (hoursByCompanyList || [])[0]?.hours || 1;
   const targetBillablePct = 80;
 
   return (
@@ -124,12 +134,32 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
         </div>
       </div>
 
-      {/* Hours by issue type */}
+      {/* Hours by issue type / company — toggleable */}
       <div className="it-card" style={{ padding: 20 }}>
-        <div style={{ marginBottom: 12 }}>
-          <div className="it-section-title">Hours by issue type</div>
-          <div className="it-section-sub">
-            {selectedQLabel || 'All available data'} · Click a row to expand sub-issues
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <div>
+            <div className="it-section-title">
+              {hoursView === 'issue' ? 'Hours by issue type' : 'Hours by company'}
+            </div>
+            <div className="it-section-sub">
+              {selectedQLabel || 'All available data'} · Click a row to expand
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button
+              className={`it-pill${hoursView === 'issue' ? ' active' : ''}`}
+              onClick={() => setHoursView('issue')}
+              style={{ fontSize: 11, padding: '3px 10px' }}
+            >
+              Issue
+            </button>
+            <button
+              className={`it-pill${hoursView === 'company' ? ' active' : ''}`}
+              onClick={() => setHoursView('company')}
+              style={{ fontSize: 11, padding: '3px 10px' }}
+            >
+              Company
+            </button>
           </div>
         </div>
 
@@ -141,13 +171,14 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
           color: 'var(--ink4)', borderBottom: '1px solid var(--border)'
         }}>
           <div />
-          <div>ISSUE</div>
+          <div>{hoursView === 'issue' ? 'ISSUE' : 'COMPANY'}</div>
           <div>SHARE</div>
           <div style={{ textAlign: 'right' }}>HOURS</div>
           <div style={{ textAlign: 'right' }}>%</div>
         </div>
 
-        {hoursByIssueList.map((issue, idx) => {
+        {/* Issue view */}
+        {hoursView === 'issue' && hoursByIssueList.map((issue, idx) => {
           const isOpen = expanded.has(issue.label);
           const hasSubs = issue.subIssues.length > 0;
           const color = ISSUE_COLORS[idx % ISSUE_COLORS.length];
@@ -219,7 +250,87 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
           );
         })}
 
-        {hoursByIssueList.length === 0 && (
+        {/* Company view */}
+        {hoursView === 'company' && (hoursByCompanyList || []).map((company, idx) => {
+          const isOpen = expandedCompanies.has(company.name);
+          const hasSubs = company.issueTypes.length > 0;
+          const color = ISSUE_COLORS[idx % ISSUE_COLORS.length];
+          const pct = totalHours > 0 ? ((company.hours / totalHours) * 100).toFixed(1) : 0;
+
+          return (
+            <div key={company.name}>
+              <div
+                onClick={() => hasSubs && toggleCompany(company.name)}
+                style={{
+                  display: 'grid', gridTemplateColumns: '24px 1fr 1fr 70px 56px',
+                  gap: 12, padding: '10px 4px', alignItems: 'center',
+                  borderBottom: '1px solid var(--border)',
+                  cursor: hasSubs ? 'pointer' : 'default'
+                }}>
+                <div style={{
+                  color: 'var(--ink3)', fontSize: 10,
+                  transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.15s',
+                  visibility: hasSubs ? 'visible' : 'hidden'
+                }}>▶</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', overflow: 'hidden' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {company.name}
+                  </span>
+                </div>
+                <div className="it-bar-track" style={{ height: 6, maxWidth: 280 }}>
+                  <div className="it-bar-fill" style={{
+                    width: `${(company.hours / maxCompanyHours) * 100}%`,
+                    background: color
+                  }} />
+                </div>
+                <div className="it-mono" style={{ fontSize: 12.5, color: 'var(--ink)', textAlign: 'right' }}>
+                  {company.hours}<span style={{ color: 'var(--ink4)' }}>h</span>
+                </div>
+                <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)', textAlign: 'right' }}>
+                  {pct}%
+                </div>
+              </div>
+
+              {isOpen && hasSubs && (
+                <div style={{
+                  padding: '8px 0 14px 36px',
+                  background: '#fbfcfe',
+                  borderBottom: '1px solid var(--border)'
+                }}>
+                  {company.issueTypes.map(sub => (
+                    <div key={sub.label} style={{
+                      display: 'grid', gridTemplateColumns: '1fr 200px 70px 56px',
+                      gap: 12, padding: '5px 4px', alignItems: 'center'
+                    }}>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>{sub.label}</div>
+                      <div className="it-bar-track" style={{ height: 4 }}>
+                        <div className="it-bar-fill" style={{
+                          width: `${company.hours > 0 ? (sub.hours / company.hours) * 100 : 0}%`,
+                          background: color, opacity: 0.65
+                        }} />
+                      </div>
+                      <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink2)', textAlign: 'right' }}>
+                        {sub.hours}<span style={{ color: 'var(--ink4)' }}>h</span>
+                      </div>
+                      <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)', textAlign: 'right' }}>
+                        {totalHours > 0 ? ((sub.hours / totalHours) * 100).toFixed(1) : 0}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {hoursView === 'issue' && hoursByIssueList.length === 0 && (
+          <p style={{ fontSize: 13, color: 'var(--ink3)', padding: '16px 4px' }}>
+            No time entry data for this period
+          </p>
+        )}
+        {hoursView === 'company' && (hoursByCompanyList || []).length === 0 && (
           <p style={{ fontSize: 13, color: 'var(--ink3)', padding: '16px 4px' }}>
             No time entry data for this period
           </p>

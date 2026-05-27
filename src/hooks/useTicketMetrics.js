@@ -179,20 +179,42 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     }
   });
 
+  // ── Tickets by company (with issue type sub-rows) ─────────────────────────
+  const byCompanyRaw = {};
+  issueSource.forEach(t => {
+    const company = t.companyName || 'Unknown';
+    if (!byCompanyRaw[company]) byCompanyRaw[company] = { count: 0, issueTypes: {} };
+    byCompanyRaw[company].count += 1;
+    if (t.issueType) {
+      const label = issueTypeMap[String(t.issueType)] || `Type ${t.issueType}`;
+      byCompanyRaw[company].issueTypes[label] = (byCompanyRaw[company].issueTypes[label] || 0) + 1;
+    }
+  });
+
+  const byCompanyList = Object.entries(byCompanyRaw)
+    .map(([name, data]) => ({
+      name,
+      count: data.count,
+      issueTypes: Object.entries(data.issueTypes)
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count)
+    }))
+    .sort((a, b) => b.count - a.count);
+
   // ── Time entry analytics ──────────────────────────────────────────────────
   const EXCLUDE_ISSUE_TYPES_TIME = new Set(['27']);
 
-const filterTimeEntries = (entries) => entries.filter(te => {
-  const ticket = ticketMap[te.ticketID];
-  if (!ticket) return true;
-  return !EXCLUDE_ISSUE_TYPES_TIME.has(String(ticket.issueType));
-});
+  const filterTimeEntries = (entries) => entries.filter(te => {
+    const ticket = ticketMap[te.ticketID];
+    if (!ticket) return true;
+    return !EXCLUDE_ISSUE_TYPES_TIME.has(String(ticket.issueType));
+  });
 
-const teSource = filterTimeEntries(
-  selectedQTimeEntries.length > 0
-    ? selectedQTimeEntries
-    : (timeEntries || [])
-);
+  const teSource = filterTimeEntries(
+    selectedQTimeEntries.length > 0
+      ? selectedQTimeEntries
+      : (timeEntries || [])
+  );
 
   // Hours by tech
   const hoursByTech = {};
@@ -288,6 +310,31 @@ const teSource = filterTimeEntries(
     }))
     .sort((a, b) => b.hours - a.hours);
 
+  // ── Hours by company (with issue type sub-rows) ───────────────────────────
+  const hoursByCompanyRaw = {};
+  teSource.forEach(te => {
+    const ticket = ticketMap[te.ticketID];
+    const company = ticket?.companyName || 'Unknown';
+    const hours = te.hoursWorked || 0;
+    if (!hoursByCompanyRaw[company]) hoursByCompanyRaw[company] = { hours: 0, issueTypes: {} };
+    hoursByCompanyRaw[company].hours += hours;
+    if (ticket?.issueType) {
+      const label = issueTypeMap[String(ticket.issueType)] || `Type ${ticket.issueType}`;
+      hoursByCompanyRaw[company].issueTypes[label] =
+        (hoursByCompanyRaw[company].issueTypes[label] || 0) + hours;
+    }
+  });
+
+  const hoursByCompanyList = Object.entries(hoursByCompanyRaw)
+    .map(([name, data]) => ({
+      name,
+      hours: parseFloat(data.hours.toFixed(1)),
+      issueTypes: Object.entries(data.issueTypes)
+        .map(([label, hours]) => ({ label, hours: parseFloat(hours.toFixed(1)) }))
+        .sort((a, b) => b.hours - a.hours)
+    }))
+    .sort((a, b) => b.hours - a.hours);
+
   // ── Staffing signals ──────────────────────────────────────────────────────
   const trailing12Start = new Date();
   trailing12Start.setMonth(trailing12Start.getMonth() - 12);
@@ -341,6 +388,8 @@ const teSource = filterTimeEntries(
     slaEligibleCount: slaEligible.length,
     // Issue types
     byIssueType,
+    // Company breakdown (tickets)
+    byCompanyList,
     // Time analytics
     timeAnalytics: {
       totalHours,
@@ -350,6 +399,7 @@ const teSource = filterTimeEntries(
       notesCoverage,
       hoursByTechList,
       hoursByIssueList,
+      hoursByCompanyList,
       entryCount: teSource.length
     },
     // Staffing

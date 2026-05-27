@@ -9,18 +9,26 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
   const {
     ytd, quarterlyTrend,
     avgResolutionDays, slaBreachRate,
-    byIssueType, selectedQLabel,
-    issueTypeMap, subIssueMap
+    byIssueType, byCompanyList,
+    selectedQLabel, issueTypeMap, subIssueMap
   } = metrics;
 
   const [hoverBar, setHoverBar] = useState(null);
   const [expandedIssues, setExpandedIssues] = useState(new Set());
+  const [expandedCompanies, setExpandedCompanies] = useState(new Set());
+  const [listView, setListView] = useState('issue'); // 'issue' | 'company'
+
   const toggleIssue = (name) => {
     const s = new Set(expandedIssues);
     s.has(name) ? s.delete(name) : s.add(name);
     setExpandedIssues(s);
   };
- 
+
+  const toggleCompany = (name) => {
+    const s = new Set(expandedCompanies);
+    s.has(name) ? s.delete(name) : s.add(name);
+    setExpandedCompanies(s);
+  };
 
   // Selected quarter calculations
   const selectedQ = selectedQuarterKey ? (() => {
@@ -52,7 +60,10 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
   // Issue List
   const issueEntries = Object.entries(byIssueType || {}).sort((a, b) => b[1] - a[1]);
   const totalIssues = issueEntries.reduce((s, [, v]) => s + v, 0);
-    
+
+  // Company list totals
+  const totalCompanyTickets = (byCompanyList || []).reduce((s, c) => s + c.count, 0);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -156,7 +167,7 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
         />
       </div>
 
-      {/* Quarterly bar chart + issue type list side by side */}
+      {/* Quarterly bar chart + issue/company list side by side */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 14 }}>
 
         {/* Bar chart */}
@@ -236,31 +247,57 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
           </svg>
         </div>
 
-        {/* Issue type list */}
+        {/* Issue / Company list */}
         <div className="it-card" style={{ padding: 20 }}>
-          <div className="it-section-title">Tickets by issue type</div>
-          <div className="it-section-sub" style={{ marginBottom: 16 }}>
-            {selectedQLabel || 'All available data'} · Click to expand sub-issues
+
+          {/* Header with toggle */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+            <div className="it-section-title">
+              {listView === 'issue' ? 'Tickets by issue type' : 'Tickets by company'}
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                className={`it-pill${listView === 'issue' ? ' active' : ''}`}
+                onClick={() => setListView('issue')}
+                style={{ fontSize: 11, padding: '3px 10px' }}
+              >
+                Issue
+              </button>
+              <button
+                className={`it-pill${listView === 'company' ? ' active' : ''}`}
+                onClick={() => setListView('company')}
+                style={{ fontSize: 11, padding: '3px 10px' }}
+              >
+                Company
+              </button>
+            </div>
           </div>
 
-          {/* Header */}
+          <div className="it-section-sub" style={{ marginBottom: 16 }}>
+            {selectedQLabel || 'All available data'} · Click to expand
+          </div>
+
+          {/* Column header */}
           <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 80px 56px',
+            display: 'grid',
+            gridTemplateColumns: '1fr 80px 56px',
             gap: 12, padding: '6px 4px',
             borderBottom: '1px solid var(--border)',
             marginBottom: 4
           }}>
-            <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>ISSUE TYPE</div>
+            <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>
+              {listView === 'issue' ? 'ISSUE TYPE' : 'COMPANY'}
+            </div>
             <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>TICKETS</div>
             <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>%</div>
           </div>
 
-          {issueEntries.map(([name, count], idx) => {
+          {/* Issue view */}
+          {listView === 'issue' && issueEntries.map(([name, count], idx) => {
             const isOpen = expandedIssues.has(name);
             const pct = totalIssues > 0 ? ((count / totalIssues) * 100).toFixed(1) : 0;
             const color = COLORS[idx % COLORS.length];
 
-            // Find sub-issues for this issue type
             const issueKey = Object.entries(issueTypeMap || {}).find(([, v]) => v === name)?.[0];
             const subIssues = issueKey ? Object.entries(byIssueType || {})
               .filter(([k]) => {
@@ -322,8 +359,72 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
               </div>
             );
           })}
+
+          {/* Company view */}
+          {listView === 'company' && (byCompanyList || []).map((company, idx) => {
+            const isOpen = expandedCompanies.has(company.name);
+            const pct = totalCompanyTickets > 0
+              ? ((company.count / totalCompanyTickets) * 100).toFixed(1)
+              : 0;
+            const color = COLORS[idx % COLORS.length];
+            const hasSubs = company.issueTypes.length > 0;
+
+            return (
+              <div key={company.name}>
+                <div
+                  onClick={() => hasSubs && toggleCompany(company.name)}
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1fr 80px 56px',
+                    gap: 12, padding: '9px 4px', alignItems: 'center',
+                    borderBottom: '1px solid var(--border)',
+                    cursor: hasSubs ? 'pointer' : 'default'
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      fontSize: 10, color: 'var(--ink3)',
+                      visibility: hasSubs ? 'visible' : 'hidden',
+                      transform: isOpen ? 'rotate(90deg)' : 'rotate(0)',
+                      transition: 'transform 0.15s', display: 'inline-block'
+                    }}>▶</span>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {company.name}
+                    </span>
+                  </div>
+                  <div className="it-mono" style={{ fontSize: 12.5, color: 'var(--ink)', textAlign: 'right' }}>
+                    {company.count.toLocaleString()}
+                  </div>
+                  <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)', textAlign: 'right' }}>
+                    {pct}%
+                  </div>
+                </div>
+
+                {isOpen && company.issueTypes.map(({ label, count: subCount }) => {
+                  const subPct = company.count > 0
+                    ? ((subCount / company.count) * 100).toFixed(1)
+                    : 0;
+                  return (
+                    <div key={label} style={{
+                      display: 'grid', gridTemplateColumns: '1fr 80px 56px',
+                      gap: 12, padding: '7px 4px 7px 32px', alignItems: 'center',
+                      borderBottom: '1px solid var(--border)',
+                      background: '#fafbfc'
+                    }}>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>└ {label}</div>
+                      <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink2)', textAlign: 'right' }}>
+                        {subCount.toLocaleString()}
+                      </div>
+                      <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)', textAlign: 'right' }}>
+                        {subPct}%
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
-  )
+  );
 }
