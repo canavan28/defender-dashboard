@@ -22,6 +22,7 @@ export function useDashboard(getToken) {
       excludeResources: response.excludeResources || [],
       issueTypeMap: response.issueTypeMap || {},
       subIssueMap: response.subIssueMap || {},
+      companyMap: response.companyMap || {},
       cacheInfo: response.cacheInfo
     });
     setSelectedQuarterKey(prev => prev || getQuarterKey(new Date()));
