@@ -5,9 +5,10 @@ const TABS = [
   { id: 'SLA health',       label: 'SLA health' },
   { id: 'Staffing signals', label: 'Staffing signals' },
   { id: 'AI Review',        label: 'AI Review', isAI: true },
+  { id: 'Action Items',     label: 'Action Items', isAction: true },
 ];
 
-export function NavTabs({ active, onChange, aiUnactionedCount = 0 }) {
+export function NavTabs({ active, onChange, aiUnactionedCount = 0, actionItemsCount = 0 }) {
   return (
     <nav style={{
       display: 'flex',
@@ -30,11 +31,11 @@ export function NavTabs({ active, onChange, aiUnactionedCount = 0 }) {
               padding: '14px 14px 13px',
               fontSize: 14,
               color: isActive
-                ? (tab.isAI ? 'var(--ai-deep)' : 'var(--ink)')
+                ? (tab.isAI || tab.isAction ? 'var(--ai-deep)' : 'var(--ink)')
                 : 'var(--ink3)',
               fontWeight: 500,
               borderBottom: isActive
-                ? `2px solid ${tab.isAI ? 'var(--ai)' : 'var(--blue)'}`
+                ? `2px solid ${tab.isAI || tab.isAction ? 'var(--ai)' : 'var(--blue)'}`
                 : '2px solid transparent',
               marginBottom: -1,
               borderRadius: '6px 6px 0 0',
@@ -52,6 +53,13 @@ export function NavTabs({ active, onChange, aiUnactionedCount = 0 }) {
                 <circle cx="12" cy="12" r="3"/>
               </svg>
             )}
+            {tab.isAction && (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2">
+                <path d="M9 11l3 3L22 4"/>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+            )}
             {tab.label}
             {tab.isAI && aiUnactionedCount > 0 && (
               <span style={{
@@ -64,6 +72,19 @@ export function NavTabs({ active, onChange, aiUnactionedCount = 0 }) {
                 fontFamily: 'var(--mono)'
               }}>
                 {aiUnactionedCount}
+              </span>
+            )}
+            {tab.isAction && actionItemsCount > 0 && (
+              <span style={{
+                background: isActive ? 'var(--ai)' : 'var(--ai-soft)',
+                color: isActive ? 'white' : 'var(--ai-deep)',
+                fontSize: 11,
+                fontWeight: 600,
+                padding: '1px 7px',
+                borderRadius: 999,
+                fontFamily: 'var(--mono)'
+              }}>
+                {actionItemsCount}
               </span>
             )}
           </button>

@@ -7,6 +7,7 @@ import { TimeAnalytics } from './modules/TimeAnalytics';
 import { SLAHealth } from './modules/SLAHealth';
 import { StaffingSignals } from './modules/StaffingSignals';
 import { AIReview } from './modules/AIReview';
+import { ActionItems } from './modules/ActionItems';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
 import { useAuth } from './hooks/useAuth';
@@ -34,8 +35,10 @@ export default function App() {
   const criticalUnactionedCount = aiReview.flags.filter(
     f => f.action === 'unactioned' && f.sev === 'critical'
   ).length;
+  const actionItemsCount = aiReview.flags.filter(
+    f => f.action === 'escalated' || f.action === 'assigned'
+  ).length;
 
-  // Handle click-through from critical flags card to AI Review tab
   const handleCriticalFlagsClick = () => {
     setAiFilter('critical');
     setActiveTab('AI Review');
@@ -90,6 +93,7 @@ export default function App() {
           if (tab !== 'AI Review') setAiFilter(null);
         }}
         aiUnactionedCount={unactionedCount}
+        actionItemsCount={actionItemsCount}
       />
 
       <main style={{ flex: 1, padding: '20px 24px 28px' }}>
@@ -165,6 +169,10 @@ export default function App() {
 
         {activeTab === 'AI Review' && (
           <AIReview aiReview={aiReview} initialSevFilter={aiFilter} />
+        )}
+
+        {activeTab === 'Action Items' && (
+          <ActionItems aiReview={aiReview} />
         )}
       </main>
     </div>

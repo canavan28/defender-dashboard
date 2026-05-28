@@ -55,20 +55,6 @@ function FlagTypePill({ type }) {
     );
 }
 
-function ActionPill({ action }) {
-    const a = ACTION[action] || ACTION.unactioned;
-    if (action === 'unactioned') return null;
-    return (
-        <span style={{
-            fontSize: 11.5, fontFamily: 'DM Mono, monospace', fontWeight: 500,
-            padding: '2px 8px', borderRadius: 999,
-            background: a.bg, color: a.fg
-        }}>
-            {a.label}
-        </span>
-    );
-}
-
 function ReviewBanner({ running, runState, lastRun, reviewStats, onRun }) {
     const formatDate = (iso) => {
         if (!iso) return 'Never';
@@ -209,7 +195,6 @@ function StatsSummary({ flags }) {
             gridTemplateColumns: '1.5fr 1fr 0.85fr',
             gap: 18
         }}>
-            {/* Severity counts */}
             <div>
                 <div className="it-eyebrow" style={{ marginBottom: 10 }}>By severity</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
@@ -238,7 +223,6 @@ function StatsSummary({ flags }) {
                 </div>
             </div>
 
-            {/* Flag types */}
             <div>
                 <div className="it-eyebrow" style={{ marginBottom: 10 }}>By flag type</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -275,7 +259,6 @@ function StatsSummary({ flags }) {
                 </div>
             </div>
 
-            {/* Actioned progress */}
             <div>
                 <div className="it-eyebrow" style={{ marginBottom: 10 }}>Actioned</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
@@ -306,9 +289,9 @@ function StatsSummary({ flags }) {
 
 function ActionMenu({ value, onChange, onClose }) {
     const items = [
-        { v: 'escalated', label: 'Escalate', hint: 'Flag for immediate attention', dot: 'var(--red)' },
-        { v: 'assigned', label: 'Assign follow-up', hint: 'Note who needs to address', dot: 'var(--blue)' },
-        { v: 'ignored', label: 'Ignore', hint: 'Acknowledged, no action', dot: 'var(--slate)' },
+        { v: 'escalated', label: 'Escalate', hint: 'Flag for immediate attention → Action Items', dot: 'var(--red)' },
+        { v: 'assigned', label: 'Assign follow-up', hint: 'Note who needs to address → Action Items', dot: 'var(--blue)' },
+        { v: 'ignored', label: 'Ignore', hint: 'Acknowledged, no action needed', dot: 'var(--slate)' },
         { v: 'resolved', label: 'Mark resolved', hint: 'Issue was addressed', dot: 'var(--green)' }
     ];
     return (
@@ -565,7 +548,6 @@ export function AIReview({ aiReview, initialSevFilter }) {
         type: 'all',
         company: ''
     });
-    const [showActioned, setShowActioned] = useState(false);
     const [sort, setSort] = useState('severity');
     const [expandedId, setExpandedId] = useState(null);
     const [openMenu, setOpenMenu] = useState(null);
@@ -575,13 +557,13 @@ export function AIReview({ aiReview, initialSevFilter }) {
         if (!loaded) loadStatus();
     }, [loaded]);
 
-    // Filter pipeline
+    // Only show unactioned flags — all actioned flags move to Action Items or are hidden
     const sevRank = { critical: 0, high: 1, medium: 2, low: 3 };
     let visible = flags.filter(f => {
+        if (f.action !== 'unactioned') return false;
         if (filters.sev !== 'all' && f.sev !== filters.sev) return false;
         if (filters.type !== 'all' && f.flagType !== filters.type) return false;
         if (filters.company && !f.company?.toLowerCase().includes(filters.company.toLowerCase())) return false;
-        if (!showActioned && f.action !== 'unactioned') return false;
         return true;
     });
 
@@ -593,8 +575,6 @@ export function AIReview({ aiReview, initialSevFilter }) {
         if (sort === 'date') return new Date(b.dateFlagged) - new Date(a.dateFlagged);
         return (a.company || '').localeCompare(b.company || '');
     });
-
-    const actionedCount = flags.filter(f => f.action !== 'unactioned').length;
 
     const setF = (k, v) => setFilters(prev => ({ ...prev, [k]: v }));
 
@@ -690,19 +670,6 @@ export function AIReview({ aiReview, initialSevFilter }) {
                     </svg>
                 </button>
 
-                <label style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 7,
-                    fontSize: 12, color: 'var(--ink2)', cursor: 'pointer'
-                }}>
-                    <input
-                        type="checkbox" checked={showActioned}
-                        onChange={e => setShowActioned(e.target.checked)}
-                        style={{ accentColor: 'var(--ai)' }}
-                    />
-                    Show actioned
-                    <span className="it-mono" style={{ color: 'var(--ink4)' }}>({actionedCount})</span>
-                </label>
-
                 <button className="it-btn" onClick={() => setExclusionOpen(true)}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" strokeWidth="2">
@@ -716,9 +683,7 @@ export function AIReview({ aiReview, initialSevFilter }) {
             {/* Flag list */}
             {!loaded ? (
                 <div className="it-card" style={{ padding: 40, textAlign: 'center' }}>
-                    <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>
-                        Loading...
-                    </div>
+                    <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>Loading...</div>
                 </div>
             ) : flags.length === 0 ? (
                 <div className="it-card" style={{ padding: 60, textAlign: 'center' }}>
@@ -738,7 +703,6 @@ export function AIReview({ aiReview, initialSevFilter }) {
                 </div>
             ) : (
                 <div className="it-card" style={{ padding: 0, overflow: 'visible' }}>
-                    {/* List header */}
                     <div style={{
                         display: 'grid',
                         gridTemplateColumns: '110px 88px 1fr 200px 130px 110px 100px',
@@ -756,11 +720,9 @@ export function AIReview({ aiReview, initialSevFilter }) {
                     {visible.map(f => {
                         const s = SEV[f.sev] || SEV.low;
                         const isExpanded = expandedId === f.id;
-                        const isActioned = f.action !== 'unactioned';
 
                         return (
-                            <div key={f.id}
-                                className={`it-row${isExpanded ? ' expanded' : ''}${isActioned ? ' actioned' : ''}`}>
+                            <div key={f.id} className={`it-row${isExpanded ? ' expanded' : ''}`}>
                                 <div className="sev-stripe" style={{ background: s.stripe }} />
                                 <div
                                     onClick={() => setExpandedId(isExpanded ? null : f.id)}
@@ -801,13 +763,13 @@ export function AIReview({ aiReview, initialSevFilter }) {
                                         </div>
                                     </div>
                                     <div style={{
-                                        fontSize: 12.5, color: 'var(--ink2)',
+                                        fontSize: 12.5, color: 'var(--ink2)', minWidth: 0,
                                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
                                     }}>
                                         {f.company}
                                     </div>
                                     <div><FlagTypePill type={f.flagType} /></div>
-                                    <div><ActionPill action={f.action} /></div>
+                                    <div />
                                     <div style={{
                                         position: 'relative', display: 'flex',
                                         justifyContent: 'flex-end', gap: 6
@@ -842,25 +804,22 @@ export function AIReview({ aiReview, initialSevFilter }) {
                                 NO MATCHING FLAGS
                             </div>
                             <div style={{ fontSize: 13 }}>
-                                Try clearing filters or checking "Show actioned".
+                                Try clearing filters or check the Action Items tab.
                             </div>
                         </div>
                     )}
                 </div>
-            )
-            }
+            )}
 
-            {
-                exclusionOpen && (
-                    <ExclusionPanel
-                        exclusions={exclusions}
-                        companies={companies}
-                        onClose={() => setExclusionOpen(false)}
-                        onAdd={addExclusion}
-                        onRemove={removeExclusion}
-                    />
-                )
-            }
-        </div >
+            {exclusionOpen && (
+                <ExclusionPanel
+                    exclusions={exclusions}
+                    companies={companies}
+                    onClose={() => setExclusionOpen(false)}
+                    onAdd={addExclusion}
+                    onRemove={removeExclusion}
+                />
+            )}
+        </div>
     );
 }
