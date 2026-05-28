@@ -535,11 +535,151 @@ function ExclusionPanel({ exclusions, companies, onClose, onAdd, onRemove }) {
     );
 }
 
-function TrendCard({ trends }) {
+
+function TicketDrilldown({ ticketNumbers, flagMap, companyName }) {
+  if (!ticketNumbers || ticketNumbers.length === 0) {
+    return (
+      <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--ink3)' }}>
+        No ticket data available for this trend.
+      </div>
+    );
+  }
+
+  const SEV_D = {
+    critical: { fg: '#991b1b', bg: '#fee2e2', stripe: '#dc2626' },
+    high:     { fg: '#9a3412', bg: '#ffedd5', stripe: '#ea580c' },
+    medium:   { fg: '#854d0e', bg: '#fef3c7', stripe: '#d97706' },
+    low:      { fg: '#334155', bg: '#e2e8f0', stripe: '#64748b' }
+  };
+  const FLAG_D = {
+    'customer-health':  '♥', 'cross-customer': '◎',
+    'escalation': '↗', 'tech-performance': '▲',
+    'documentation': '□', 'reopen': '↻'
+  };
+
+  const flagged = ticketNumbers.filter(n => flagMap[n]);
+  const unflagged = ticketNumbers.filter(n => !flagMap[n]);
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border)', background: '#f7f8fc' }}>
+      {/* Header */}
+      <div style={{
+        padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12,
+        borderBottom: '1px solid var(--border)'
+      }}>
+        <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)' }}>
+          {ticketNumbers.length} TICKETS · {flagged.length} FLAGGED · {unflagged.length} CLEAN
+        </span>
+      </div>
+
+      {/* Flagged tickets — full detail */}
+      {flagged.length > 0 && (
+        <div>
+          <div style={{ padding: '8px 16px 4px' }}>
+            <span className="it-mono" style={{ fontSize: 10.5, color: 'var(--ai-deep)', fontWeight: 600 }}>
+              FLAGGED TICKETS
+            </span>
+          </div>
+          {flagged.map(n => {
+            const f = flagMap[n];
+            const s = SEV_D[f.sev] || SEV_D.low;
+            return (
+              <div key={n} style={{
+                display: 'grid',
+                gridTemplateColumns: '90px 80px 1fr 120px 32px',
+                gap: 10, padding: '10px 16px', alignItems: 'center',
+                borderBottom: '1px solid var(--border)',
+                background: 'white',
+                borderLeft: `3px solid ${s.stripe}`
+              }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 600, padding: '2px 6px',
+                  borderRadius: 999, background: s.bg, color: s.fg,
+                  fontFamily: 'DM Mono, monospace', textAlign: 'center'
+                }}>
+                  {f.sev?.toUpperCase()}
+                </span>
+                <a href={f.ticketUrl} target="_blank" rel="noreferrer"
+                  className="it-mono"
+                  style={{
+                    fontSize: 12, color: 'var(--blue)', textDecoration: 'none',
+                    fontWeight: 500, flexShrink: 0,
+                    display: 'inline-flex', alignItems: 'center', gap: 3
+                  }}>
+                  {f.id}
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2" style={{ opacity: 0.6 }}>
+                    <path d="M7 17L17 7M9 7h8v8"/>
+                  </svg>
+                </a>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 12.5, color: 'var(--ink)', fontWeight: 500,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                  }}>
+                    {f.title}
+                  </div>
+                  <div style={{
+                    fontSize: 11.5, color: 'var(--ink3)', marginTop: 1,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                  }}>
+                    {f.summary}
+                  </div>
+                </div>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  fontSize: 11.5, color: 'var(--ai-deep)',
+                  background: 'var(--ai-soft)', padding: '2px 7px',
+                  borderRadius: 4, fontFamily: 'DM Mono, monospace'
+                }}>
+                  {FLAG_D[f.flagType] || '•'} {f.flagType?.replace('-', ' ')}
+                </span>
+                <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>
+                  {f.openedDays != null ? `${f.openedDays}d` : '—'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Unflagged tickets — basic info */}
+      {unflagged.length > 0 && (
+        <div>
+          <div style={{ padding: '8px 16px 4px' }}>
+            <span className="it-mono" style={{ fontSize: 10.5, color: 'var(--ink3)', fontWeight: 600 }}>
+              REVIEWED — NO FLAGS ({unflagged.length})
+            </span>
+          </div>
+          <div style={{ padding: '8px 16px 12px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {unflagged.map(n => (
+              <span key={n} className="it-mono" style={{
+                fontSize: 11.5, color: 'var(--ink3)',
+                background: 'white', border: '1px solid var(--border)',
+                padding: '2px 8px', borderRadius: 4
+              }}>
+                {n}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrendCard({ trends, flags }) {
   const [open, setOpen] = useState(false);
   const [expandedItem, setExpandedItem] = useState(null);
+  const [drilldownItem, setDrilldownItem] = useState(null); // key of item showing tickets
 
   if (!trends) return null;
+
+  // Build flag lookup map for drill-down
+  const flagMap = {};
+  (flags || []).forEach(f => { flagMap[f.id] = f; });
+
+  const toggleDrilldown = (key) => setDrilldownItem(prev => prev === key ? null : key);
 
   const totalItems =
     (trends.companyTrends?.length || 0) +
@@ -635,6 +775,7 @@ function TrendCard({ trends }) {
                   const s = SEV_TREND[item.severity] || SEV_TREND.low;
                   const key = `company-${i}`;
                   const isExpanded = expandedItem === key;
+                  const isDrilldown = drilldownItem === key;
                   return (
                     <div key={key} style={{
                       borderRadius: 8, border: '1px solid var(--border)',
@@ -662,6 +803,19 @@ function TrendCard({ trends }) {
                             {item.headline}
                           </span>
                         </div>
+                        {item.ticketNumbers?.length > 0 && (
+                          <button
+                            className="it-btn sm"
+                            onClick={e => { e.stopPropagation(); toggleDrilldown(key); }}
+                            style={{
+                              borderColor: isDrilldown ? 'var(--ai)' : 'var(--border)',
+                              color: isDrilldown ? 'var(--ai-deep)' : 'var(--ink3)',
+                              background: isDrilldown ? 'var(--ai-soft)' : 'white',
+                              flexShrink: 0
+                            }}>
+                            {item.ticketNumbers.length} tickets
+                          </button>
+                        )}
                         <span style={{
                           fontSize: 10, color: 'var(--ink3)',
                           transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)',
@@ -693,6 +847,13 @@ function TrendCard({ trends }) {
                           )}
                         </div>
                       )}
+                      {isDrilldown && (
+                        <TicketDrilldown
+                          ticketNumbers={item.ticketNumbers}
+                          flagMap={flagMap}
+                          companyName={item.companyName}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -709,6 +870,7 @@ function TrendCard({ trends }) {
                   const isConcern = item.type === 'concern';
                   const key = `tech-${i}`;
                   const isExpanded = expandedItem === key;
+                  const isDrilldown = drilldownItem === key;
                   return (
                     <div key={key} style={{
                       borderRadius: 8, border: '1px solid var(--border)',
@@ -739,6 +901,19 @@ function TrendCard({ trends }) {
                             {item.headline}
                           </span>
                         </div>
+                        {item.ticketNumbers?.length > 0 && (
+                          <button
+                            className="it-btn sm"
+                            onClick={e => { e.stopPropagation(); toggleDrilldown(key); }}
+                            style={{
+                              borderColor: isDrilldown ? 'var(--ai)' : 'var(--border)',
+                              color: isDrilldown ? 'var(--ai-deep)' : 'var(--ink3)',
+                              background: isDrilldown ? 'var(--ai-soft)' : 'white',
+                              flexShrink: 0
+                            }}>
+                            {item.ticketNumbers.length} tickets
+                          </button>
+                        )}
                         <span style={{
                           fontSize: 10, color: 'var(--ink3)',
                           transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)',
@@ -770,6 +945,13 @@ function TrendCard({ trends }) {
                           )}
                         </div>
                       )}
+                      {isDrilldown && (
+                        <TicketDrilldown
+                          ticketNumbers={item.ticketNumbers}
+                          flagMap={flagMap}
+                          companyName={item.techName}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -786,6 +968,7 @@ function TrendCard({ trends }) {
                   const s = SEV_TREND[item.severity] || SEV_TREND.low;
                   const key = `sentiment-${i}`;
                   const isExpanded = expandedItem === key;
+                  const isDrilldown = drilldownItem === key;
                   return (
                     <div key={key} style={{
                       borderRadius: 8, border: '1px solid var(--border)',
@@ -813,6 +996,19 @@ function TrendCard({ trends }) {
                             {item.signal}
                           </span>
                         </div>
+                        {item.ticketNumbers?.length > 0 && (
+                          <button
+                            className="it-btn sm"
+                            onClick={e => { e.stopPropagation(); toggleDrilldown(key); }}
+                            style={{
+                              borderColor: isDrilldown ? 'var(--ai)' : 'var(--border)',
+                              color: isDrilldown ? 'var(--ai-deep)' : 'var(--ink3)',
+                              background: isDrilldown ? 'var(--ai-soft)' : 'white',
+                              flexShrink: 0
+                            }}>
+                            {item.ticketNumbers.length} tickets
+                          </button>
+                        )}
                         <span style={{
                           fontSize: 10, color: 'var(--ink3)',
                           transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)',
@@ -830,6 +1026,13 @@ function TrendCard({ trends }) {
                             ))}
                           </ul>
                         </div>
+                      )}
+                      {isDrilldown && (
+                        <TicketDrilldown
+                          ticketNumbers={item.ticketNumbers}
+                          flagMap={flagMap}
+                          companyName={item.companyName}
+                        />
                       )}
                     </div>
                   );
@@ -915,6 +1118,9 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
                     <span style={{ fontSize: 13, color: 'var(--red)' }}>{error}</span>
                 </div>
             )}
+
+            {/* Trend analysis — top of page */}
+            <TrendCard trends={trends} flags={flags} />
 
             <ReviewBanner
                 running={running} runState={runState}
@@ -1066,7 +1272,8 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
                                         style={{
                                             fontSize: 12.5, color: 'var(--blue)',
                                             textDecoration: 'none', fontWeight: 500,
-                                            display: 'inline-flex', alignItems: 'center', gap: 4
+                                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                                            flexShrink: 0
                                         }}>
                                         {f.id}
                                         <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
@@ -1136,9 +1343,6 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
                     )}
                 </div>
             )}
-
-            {/* Trend analysis card */}
-            <TrendCard trends={trends} />
 
             {exclusionOpen && (
                 <ExclusionPanel
