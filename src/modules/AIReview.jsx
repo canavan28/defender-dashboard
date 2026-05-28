@@ -55,7 +55,7 @@ function FlagTypePill({ type }) {
     );
 }
 
-function ReviewBanner({ running, runState, lastRun, reviewStats, onRun }) {
+function ReviewBanner({ running, runState, lastRun, reviewStats, onRun, disabled }) {
     const formatDate = (iso) => {
         if (!iso) return 'Never';
         const d = new Date(iso);
@@ -159,7 +159,8 @@ function ReviewBanner({ running, runState, lastRun, reviewStats, onRun }) {
                 </div>
 
                 {!running && (
-                    <button className="it-btn ai" onClick={onRun}>
+                    <button className="it-btn ai" onClick={onRun} disabled={disabled}
+                        style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" strokeWidth="2.4"
                             strokeLinecap="round" strokeLinejoin="round">
@@ -534,10 +535,319 @@ function ExclusionPanel({ exclusions, companies, onClose, onAdd, onRemove }) {
     );
 }
 
-export function AIReview({ aiReview, initialSevFilter }) {
+function TrendCard({ trends }) {
+  const [open, setOpen] = useState(false);
+  const [expandedItem, setExpandedItem] = useState(null);
+
+  if (!trends) return null;
+
+  const totalItems =
+    (trends.companyTrends?.length || 0) +
+    (trends.techPatterns?.length || 0) +
+    (trends.sentimentSignals?.length || 0);
+
+  if (totalItems === 0) return null;
+
+  const SEV_TREND = {
+    critical: { fg: '#991b1b', bg: '#fee2e2', stripe: '#dc2626' },
+    high:     { fg: '#9a3412', bg: '#ffedd5', stripe: '#ea580c' },
+    medium:   { fg: '#854d0e', bg: '#fef3c7', stripe: '#d97706' },
+    low:      { fg: '#334155', bg: '#e2e8f0', stripe: '#64748b' }
+  };
+
+  const formatDate = (iso) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  return (
+    <div className="it-card" style={{ padding: 0, overflow: 'hidden' }}>
+      {/* Header — always visible */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 14,
+          padding: '16px 20px', cursor: 'pointer',
+          borderBottom: open ? '1px solid var(--border)' : 'none'
+        }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 8,
+          background: 'var(--ai-soft)', border: '1px solid #d6daff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'var(--ai-deep)', flexShrink: 0
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 3v18h18"/>
+            <path d="M7 16l4-4 4 4 4-4"/>
+          </svg>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ai-deep)' }}>
+            Long-term Trend Analysis
+          </div>
+          <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 1 }}>
+            {trends.ticketsAnalyzed?.toLocaleString()} tickets analyzed · Generated {formatDate(trends.generatedAt)} ·{' '}
+            {trends.companyTrends?.length || 0} company trends · {trends.techPatterns?.length || 0} tech patterns · {trends.sentimentSignals?.length || 0} sentiment signals
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 16, marginRight: 16 }}>
+          {(trends.companyTrends?.length > 0) && (
+            <div style={{ textAlign: 'center' }}>
+              <div className="it-mono" style={{ fontSize: 18, fontWeight: 500, color: 'var(--ink)' }}>
+                {trends.companyTrends.length}
+              </div>
+              <div className="it-mono" style={{ fontSize: 10.5, color: 'var(--ink3)' }}>Companies</div>
+            </div>
+          )}
+          {(trends.techPatterns?.length > 0) && (
+            <div style={{ textAlign: 'center' }}>
+              <div className="it-mono" style={{ fontSize: 18, fontWeight: 500, color: 'var(--ink)' }}>
+                {trends.techPatterns.length}
+              </div>
+              <div className="it-mono" style={{ fontSize: 10.5, color: 'var(--ink3)' }}>Tech patterns</div>
+            </div>
+          )}
+          {(trends.sentimentSignals?.length > 0) && (
+            <div style={{ textAlign: 'center' }}>
+              <div className="it-mono" style={{ fontSize: 18, fontWeight: 500, color: 'var(--ink)' }}>
+                {trends.sentimentSignals.length}
+              </div>
+              <div className="it-mono" style={{ fontSize: 10.5, color: 'var(--ink3)' }}>Sentiment signals</div>
+            </div>
+          )}
+        </div>
+        <span style={{
+          fontSize: 10, color: 'var(--ink3)',
+          transform: open ? 'rotate(90deg)' : 'rotate(0)',
+          transition: 'transform 0.15s', display: 'inline-block'
+        }}>▶</span>
+      </div>
+
+      {open && (
+        <div style={{ padding: '20px 20px 24px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {/* Company Trends */}
+          {trends.companyTrends?.length > 0 && (
+            <div>
+              <div className="it-eyebrow" style={{ marginBottom: 10 }}>Company Trends</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {trends.companyTrends.map((item, i) => {
+                  const s = SEV_TREND[item.severity] || SEV_TREND.low;
+                  const key = `company-${i}`;
+                  const isExpanded = expandedItem === key;
+                  return (
+                    <div key={key} style={{
+                      borderRadius: 8, border: '1px solid var(--border)',
+                      borderLeft: `3px solid ${s.stripe}`, overflow: 'hidden'
+                    }}>
+                      <div
+                        onClick={() => setExpandedItem(isExpanded ? null : key)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 12,
+                          padding: '12px 16px', cursor: 'pointer',
+                          background: isExpanded ? '#fafbfe' : 'white'
+                        }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px',
+                          borderRadius: 999, background: s.bg, color: s.fg,
+                          fontFamily: 'DM Mono, monospace', flexShrink: 0
+                        }}>
+                          {item.severity?.toUpperCase()}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                            {item.companyName}
+                          </span>
+                          <span style={{ fontSize: 13, color: 'var(--ink2)', marginLeft: 10 }}>
+                            {item.headline}
+                          </span>
+                        </div>
+                        <span style={{
+                          fontSize: 10, color: 'var(--ink3)',
+                          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)',
+                          transition: 'transform 0.15s', flexShrink: 0
+                        }}>▶</span>
+                      </div>
+                      {isExpanded && (
+                        <div style={{ padding: '0 16px 16px', background: '#fafbfe', borderTop: '1px solid var(--border)' }}>
+                          {item.details?.length > 0 && (
+                            <ul style={{ margin: '12px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              {item.details.map((d, j) => (
+                                <li key={j} style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink2)' }}>
+                                  <span style={{ width: 4, height: 4, borderRadius: 999, background: s.stripe, marginTop: 8, flexShrink: 0 }} />
+                                  {d}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {item.recommendation && (
+                            <div style={{
+                              marginTop: 12, padding: '10px 14px',
+                              background: 'var(--ai-soft)', borderRadius: 8,
+                              borderLeft: '3px solid var(--ai)',
+                              fontSize: 13, color: 'var(--ink2)'
+                            }}>
+                              <span style={{ fontWeight: 600, color: 'var(--ai-deep)' }}>Recommendation: </span>
+                              {item.recommendation}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Tech Patterns */}
+          {trends.techPatterns?.length > 0 && (
+            <div>
+              <div className="it-eyebrow" style={{ marginBottom: 10 }}>Tech Patterns</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {trends.techPatterns.map((item, i) => {
+                  const isConcern = item.type === 'concern';
+                  const key = `tech-${i}`;
+                  const isExpanded = expandedItem === key;
+                  return (
+                    <div key={key} style={{
+                      borderRadius: 8, border: '1px solid var(--border)',
+                      borderLeft: `3px solid ${isConcern ? 'var(--amber)' : 'var(--green)'}`,
+                      overflow: 'hidden'
+                    }}>
+                      <div
+                        onClick={() => setExpandedItem(isExpanded ? null : key)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 12,
+                          padding: '12px 16px', cursor: 'pointer',
+                          background: isExpanded ? '#fafbfe' : 'white'
+                        }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px',
+                          borderRadius: 999,
+                          background: isConcern ? 'var(--amber-soft)' : 'var(--green-soft)',
+                          color: isConcern ? 'var(--amber)' : 'var(--green)',
+                          fontFamily: 'DM Mono, monospace', flexShrink: 0
+                        }}>
+                          {isConcern ? 'CONCERN' : 'STRENGTH'}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                            {item.techName}
+                          </span>
+                          <span style={{ fontSize: 13, color: 'var(--ink2)', marginLeft: 10 }}>
+                            {item.headline}
+                          </span>
+                        </div>
+                        <span style={{
+                          fontSize: 10, color: 'var(--ink3)',
+                          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)',
+                          transition: 'transform 0.15s', flexShrink: 0
+                        }}>▶</span>
+                      </div>
+                      {isExpanded && (
+                        <div style={{ padding: '0 16px 16px', background: '#fafbfe', borderTop: '1px solid var(--border)' }}>
+                          {item.details?.length > 0 && (
+                            <ul style={{ margin: '12px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              {item.details.map((d, j) => (
+                                <li key={j} style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink2)' }}>
+                                  <span style={{ width: 4, height: 4, borderRadius: 999, background: isConcern ? 'var(--amber)' : 'var(--green)', marginTop: 8, flexShrink: 0 }} />
+                                  {d}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {item.recommendation && (
+                            <div style={{
+                              marginTop: 12, padding: '10px 14px',
+                              background: 'var(--ai-soft)', borderRadius: 8,
+                              borderLeft: '3px solid var(--ai)',
+                              fontSize: 13, color: 'var(--ink2)'
+                            }}>
+                              <span style={{ fontWeight: 600, color: 'var(--ai-deep)' }}>Recommendation: </span>
+                              {item.recommendation}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Sentiment Signals */}
+          {trends.sentimentSignals?.length > 0 && (
+            <div>
+              <div className="it-eyebrow" style={{ marginBottom: 10 }}>Sentiment Signals</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {trends.sentimentSignals.map((item, i) => {
+                  const s = SEV_TREND[item.severity] || SEV_TREND.low;
+                  const key = `sentiment-${i}`;
+                  const isExpanded = expandedItem === key;
+                  return (
+                    <div key={key} style={{
+                      borderRadius: 8, border: '1px solid var(--border)',
+                      borderLeft: `3px solid ${s.stripe}`, overflow: 'hidden'
+                    }}>
+                      <div
+                        onClick={() => setExpandedItem(isExpanded ? null : key)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 12,
+                          padding: '12px 16px', cursor: 'pointer',
+                          background: isExpanded ? '#fafbfe' : 'white'
+                        }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px',
+                          borderRadius: 999, background: s.bg, color: s.fg,
+                          fontFamily: 'DM Mono, monospace', flexShrink: 0
+                        }}>
+                          {item.severity?.toUpperCase()}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                            {item.companyName}
+                          </span>
+                          <span style={{ fontSize: 13, color: 'var(--ink2)', marginLeft: 10 }}>
+                            {item.signal}
+                          </span>
+                        </div>
+                        <span style={{
+                          fontSize: 10, color: 'var(--ink3)',
+                          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)',
+                          transition: 'transform 0.15s', flexShrink: 0
+                        }}>▶</span>
+                      </div>
+                      {isExpanded && item.supportingData?.length > 0 && (
+                        <div style={{ padding: '0 16px 16px', background: '#fafbfe', borderTop: '1px solid var(--border)' }}>
+                          <ul style={{ margin: '12px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            {item.supportingData.map((d, j) => (
+                              <li key={j} style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink2)' }}>
+                                <span style={{ width: 4, height: 4, borderRadius: 999, background: s.stripe, marginTop: 8, flexShrink: 0 }} />
+                                {d}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
     const {
         flags, exclusions, companies,
-        lastRun, reviewStats, running, runState,
+        lastRun, reviewStats, trends,
+        running, runState,
         error, loaded,
         loadStatus, runReview, setAction,
         addExclusion, removeExclusion
@@ -581,6 +891,22 @@ export function AIReview({ aiReview, initialSevFilter }) {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative' }}>
 
+            {/* Bug 6: Sync conflict warning */}
+            {syncInProgress && !running && (
+                <div style={{
+                    background: 'var(--amber-soft)', border: '1px solid var(--amber)',
+                    borderRadius: 10, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10
+                }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <span style={{ fontSize: 13, color: 'var(--amber)' }}>
+                        A data sync is in progress. Wait for it to finish before running AI Review to avoid hitting AutoTask's 3-thread limit.
+                    </span>
+                </div>
+            )}
+
             {error && (
                 <div style={{
                     background: 'var(--red-soft)', border: '1px solid #fecaca',
@@ -594,6 +920,7 @@ export function AIReview({ aiReview, initialSevFilter }) {
                 running={running} runState={runState}
                 lastRun={lastRun} reviewStats={reviewStats}
                 onRun={runReview}
+                disabled={syncInProgress}
             />
 
             <StatsSummary flags={flags} />
@@ -720,7 +1047,6 @@ export function AIReview({ aiReview, initialSevFilter }) {
                     {visible.map(f => {
                         const s = SEV[f.sev] || SEV.low;
                         const isExpanded = expandedId === f.id;
-
                         return (
                             <div key={f.id} className={`it-row${isExpanded ? ' expanded' : ''}`}>
                                 <div className="sev-stripe" style={{ background: s.stripe }} />
@@ -810,6 +1136,9 @@ export function AIReview({ aiReview, initialSevFilter }) {
                     )}
                 </div>
             )}
+
+            {/* Trend analysis card */}
+            <TrendCard trends={trends} />
 
             {exclusionOpen && (
                 <ExclusionPanel

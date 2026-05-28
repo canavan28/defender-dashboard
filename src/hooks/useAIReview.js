@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 export function useAIReview(api) {
   const [flags, setFlags] = useState([]);
@@ -6,10 +6,66 @@ export function useAIReview(api) {
   const [companies, setCompanies] = useState([]);
   const [lastRun, setLastRun] = useState(null);
   const [reviewStats, setReviewStats] = useState({});
+  const [trends, setTrends] = useState(null);
   const [running, setRunning] = useState(false);
   const [runState, setRunState] = useState({ progress: 0, phase: 0 });
   const [error, setError] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const pollRef = useRef(null);
+
+  const applyStatus = (status) => {
+    setFlags(status.flags || []);
+    setExclusions(status.exclusions || []);
+    setLastRun(status.lastReviewRun);
+    setReviewStats(status.reviewStats || {});
+    if (status.trends) setTrends(status.trends);
+  };
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const status = await api.aiReview.status();
+
+        // Map backend progress/phase to frontend runState
+        const phaseMap = {
+          'Fetching tickets': 0,
+          'Fetching company names': 0,
+          'Analyzing': 1,
+          'Analyzing long-term trends': 2,
+          'Complete': 3,
+          'Failed': 3
+        };
+        const phaseIdx = Object.entries(phaseMap).find(([key]) =>
+          status.runPhase?.startsWith(key)
+        )?.[1] ?? 1;
+
+        setRunState({ progress: status.runProgress || 0, phase: phaseIdx });
+
+        if (!status.running) {
+          stopPolling();
+          setRunning(false);
+          setRunState({ progress: 100, phase: 3 });
+
+          if (status.runError) {
+            setError(status.runError);
+          } else {
+            applyStatus(status);
+            setLastRun(new Date().toISOString());
+          }
+        }
+      } catch (err) {
+        console.error('[AIReview] Poll error:', err.message);
+      }
+    }, 4000);
+  }, [api]);
 
   const loadStatus = useCallback(async () => {
     if (!api?.aiReview) return;
@@ -18,64 +74,49 @@ export function useAIReview(api) {
         api.aiReview.status(),
         api.aiReview.companies()
       ]);
-      setFlags(status.flags || []);
-      setExclusions(status.exclusions || []);
-      setLastRun(status.lastReviewRun);
-      setReviewStats(status.reviewStats || {});
+      applyStatus(status);
       setCompanies((companiesRes.companies || []).map(c => c.name));
+
+      // If a review is already running (e.g. server restarted mid-run), start polling
+      if (status.running) {
+        setRunning(true);
+        setRunState({ progress: status.runProgress || 0, phase: 0 });
+        startPolling();
+      }
+
       setLoaded(true);
     } catch (err) {
       console.error('[AIReview] Failed to load status:', err.message);
       setLoaded(true);
     }
-  }, []);
+  }, [startPolling]);
 
   const runReview = useCallback(async () => {
     if (!api?.aiReview) return;
     setRunning(true);
     setError(null);
-    setRunState({ progress: 0, phase: 0 });
-
-    // Animate phases while waiting for response
-    const phases = [
-      { phase: 0, target: 25, label: 'Fetching tickets' },
-      { phase: 1, target: 55, label: 'Analyzing content' },
-      { phase: 2, target: 80, label: 'Cross-referencing' },
-      { phase: 3, target: 95, label: 'Generating flags' }
-    ];
-
-    let currentProgress = 0;
-    const interval = setInterval(() => {
-      currentProgress = Math.min(currentProgress + 1, 94);
-      const phaseIdx = phases.findIndex(p => currentProgress < p.target) - 1;
-      setRunState({
-        progress: currentProgress,
-        phase: Math.max(0, Math.min(phaseIdx, 3))
-      });
-    }, 600);
+    setRunState({ progress: 2, phase: 0 });
 
     try {
       const result = await api.aiReview.run();
-      clearInterval(interval);
-      setRunState({ progress: 100, phase: 3 });
-      setFlags(result.flags || []);
-      setLastRun(new Date().toISOString());
-      setReviewStats(prev => ({
-        ...prev,
-        lastRunAt: new Date().toISOString(),
-        lastRunReviewed: result.reviewed,
-        lastRunFlagged: result.flagged,
-        totalReviewed: (prev.totalReviewed || 0) + result.reviewed
-      }));
-      await new Promise(r => setTimeout(r, 500));
+      if (result.alreadyRunning) {
+        // Already in progress — just start polling to track it
+        setRunState({ progress: result.progress || 2, phase: 0 });
+        startPolling();
+        return;
+      }
+      if (result.started) {
+        // Fire-and-forget confirmed — start polling for progress
+        startPolling();
+      } else {
+        setRunning(false);
+        setError('Failed to start review');
+      }
     } catch (err) {
-      clearInterval(interval);
-      setError(err.message);
-    } finally {
       setRunning(false);
-      setRunState({ progress: 0, phase: 0 });
+      setError(err.message);
     }
-  }, []);
+  }, [startPolling]);
 
   const setAction = useCallback(async (ticketId, action) => {
     setFlags(prev => prev.map(f => f.id === ticketId ? { ...f, action } : f));
@@ -106,7 +147,8 @@ export function useAIReview(api) {
 
   return {
     flags, exclusions, companies,
-    lastRun, reviewStats, running, runState,
+    lastRun, reviewStats, trends,
+    running, runState,
     error, loaded,
     loadStatus, runReview, setAction,
     addExclusion, removeExclusion

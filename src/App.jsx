@@ -168,7 +168,7 @@ export default function App() {
         )}
 
         {activeTab === 'AI Review' && (
-          <AIReview aiReview={aiReview} initialSevFilter={aiFilter} />
+          <AIReview aiReview={aiReview} initialSevFilter={aiFilter} syncInProgress={loading} />
         )}
 
         {activeTab === 'Action Items' && (
