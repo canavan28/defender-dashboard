@@ -37,9 +37,6 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     issueTypeMap, subIssueMap, companyMap
   } = rawData;
 
-  console.log('[Debug] companyMap sample:', JSON.stringify(Object.entries(companyMap || {}).slice(0, 3)));
-console.log('[Debug] ticket companyID sample:', JSON.stringify(allTickets.slice(0, 3).map(t => ({ id: t.companyID, type: typeof t.companyID }))));
-
   const now = new Date();
 
   // ── Resource map ────────────────────────────────────────────────────────────
@@ -369,6 +366,143 @@ console.log('[Debug] ticket companyID sample:', JSON.stringify(allTickets.slice(
     ? (((lastCompleteQCount - lastCompleteQPriorCount) / lastCompleteQPriorCount) * 100).toFixed(0)
     : 0;
 
+  // ── Tech Grading ─────────────────────────────────────────────────────────────
+  const MIN_TICKETS = 30;
+  const gradeTicketSource = selectedQTickets.length > 0 ? selectedQTickets : allTickets;
+  const gradeTeSource = filterTimeEntries(
+    selectedQTimeEntries.length > 0 ? selectedQTimeEntries : (timeEntries || [])
+  );
+
+  const gradeTechIds = Object.keys(resourceMap).map(Number);
+
+  const techRaw = {};
+  gradeTechIds.forEach(id => {
+    techRaw[id] = {
+      name: resourceMap[id], id,
+      assignedTickets: [], completedTickets: [],
+      responseTimes: [], resolutionDays: [],
+      escalatedCount: 0, timeEntries: []
+    };
+  });
+
+  const TECH_TIERS_LOCAL = {
+    29682924: 1, 29682927: 1,
+    29682910: 2, 29682889: 2,
+    29682904: 3, 29682899: 3
+  };
+
+  gradeTicketSource.forEach(t => {
+    const id = t.assignedResourceID;
+    if (!id || !techRaw[id]) return;
+    const tech = techRaw[id];
+    tech.assignedTickets.push(t);
+
+    if (t.createDate && t.firstResponseDateTime) {
+      const hrs = (new Date(t.firstResponseDateTime) - new Date(t.createDate)) / (1000 * 60 * 60);
+      if (hrs >= 0 && hrs < 720) tech.responseTimes.push(hrs);
+    }
+
+    if (t.createDate && t.completedDate) {
+      const days = (new Date(t.completedDate) - new Date(t.createDate)) / (1000 * 60 * 60 * 24);
+      if (days >= 0 && days < 365) {
+        tech.resolutionDays.push(days);
+        tech.completedTickets.push(t);
+      }
+    }
+
+    const assignedTier = TECH_TIERS_LOCAL[id] || null;
+    const completedById = t.completedByResourceID;
+    if (completedById && completedById !== id && TECH_TIERS_LOCAL[completedById]) {
+      if (assignedTier && TECH_TIERS_LOCAL[completedById] > assignedTier) {
+        tech.escalatedCount++;
+      }
+    }
+  });
+
+  gradeTeSource.forEach(te => {
+    const id = te.resourceID;
+    if (!id || !techRaw[id]) return;
+    techRaw[id].timeEntries.push(te);
+  });
+
+  const allResponseTimes = Object.values(techRaw).flatMap(t => t.responseTimes);
+  const allGradeResolutionDays = Object.values(techRaw).flatMap(t => t.resolutionDays);
+  const teamAvgResponseHrs = allResponseTimes.length
+    ? allResponseTimes.reduce((a, b) => a + b, 0) / allResponseTimes.length : null;
+  const teamAvgGradeResolutionDays = allGradeResolutionDays.length
+    ? allGradeResolutionDays.reduce((a, b) => a + b, 0) / allGradeResolutionDays.length : null;
+
+  const techGrades = gradeTechIds.map(id => {
+    const t = techRaw[id];
+    if (t.assignedTickets.length < MIN_TICKETS) return null;
+
+    let responseScore = 0, avgResponseHrs = null;
+    if (t.responseTimes.length >= 5 && teamAvgResponseHrs) {
+      avgResponseHrs = t.responseTimes.reduce((a, b) => a + b, 0) / t.responseTimes.length;
+      const ratio = avgResponseHrs / teamAvgResponseHrs;
+      responseScore = Math.max(0, Math.min(15, 15 * (1 - (ratio - 1) / 2)));
+    }
+
+    let resolutionScore = 0, avgResolutionDaysTech = null;
+    if (t.resolutionDays.length >= 5 && teamAvgGradeResolutionDays) {
+      avgResolutionDaysTech = t.resolutionDays.reduce((a, b) => a + b, 0) / t.resolutionDays.length;
+      const ratio = avgResolutionDaysTech / teamAvgGradeResolutionDays;
+      resolutionScore = Math.max(0, Math.min(25, 25 * (1 - (ratio - 1) / 2)));
+    }
+
+    const escalationRate = t.assignedTickets.length > 0
+      ? t.escalatedCount / t.assignedTickets.length : 0;
+    const escalationScore = Math.max(0, 20 * (1 - escalationRate / 0.4));
+
+    const entriesWithNotes = t.timeEntries.filter(
+      te => (te.summaryNotes?.trim().length > 0) || (te.internalNotes?.trim().length > 0)
+    ).length;
+    const notesPct = t.timeEntries.length > 0 ? entriesWithNotes / t.timeEntries.length : 0;
+    const notesScore = 25 * notesPct;
+
+    const fcrCount = t.assignedTickets.filter(ticket =>
+      !ticket.completedByResourceID || ticket.completedByResourceID === ticket.assignedResourceID
+    ).length;
+    const fcrRate = t.assignedTickets.length > 0 ? fcrCount / t.assignedTickets.length : 0;
+    const fcrScore = 15 * fcrRate;
+
+    const totalScore = Math.min(100, Math.round(responseScore + resolutionScore + escalationScore + notesScore + fcrScore));
+
+    return {
+      id, name: t.name, score: totalScore,
+      ticketCount: t.assignedTickets.length,
+      metrics: {
+        responseTime: {
+          score: Math.round(responseScore), maxScore: 15,
+          avgHrs: avgResponseHrs != null ? parseFloat(avgResponseHrs.toFixed(1)) : null,
+          teamAvgHrs: teamAvgResponseHrs != null ? parseFloat(teamAvgResponseHrs.toFixed(1)) : null
+        },
+        resolutionTime: {
+          score: Math.round(resolutionScore), maxScore: 25,
+          avgDays: avgResolutionDaysTech != null ? parseFloat(avgResolutionDaysTech.toFixed(1)) : null,
+          teamAvgDays: teamAvgGradeResolutionDays != null ? parseFloat(teamAvgGradeResolutionDays.toFixed(1)) : null
+        },
+        escalation: {
+          score: Math.round(escalationScore), maxScore: 20,
+          rate: Math.round(escalationRate * 100),
+          escalatedCount: t.escalatedCount,
+          totalTickets: t.assignedTickets.length
+        },
+        notes: {
+          score: Math.round(notesScore), maxScore: 25,
+          pct: Math.round(notesPct * 100),
+          entriesWithNotes, totalEntries: t.timeEntries.length
+        },
+        fcr: {
+          score: Math.round(fcrScore), maxScore: 15,
+          rate: Math.round(fcrRate * 100),
+          fcrCount, totalTickets: t.assignedTickets.length
+        }
+      }
+    };
+  }).filter(Boolean).sort((a, b) => b.score - a.score);
+
+
   return {
     // YTD
     ytd: {
@@ -424,6 +558,7 @@ console.log('[Debug] ticket companyID sample:', JSON.stringify(allTickets.slice(
     },
     resourceMap,
     issueTypeMap: rawData.issueTypeMap,
-    subIssueMap: rawData.subIssueMap
+    subIssueMap: rawData.subIssueMap,
+    techGrades
   };
 }

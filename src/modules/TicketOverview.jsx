@@ -298,13 +298,16 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
             const pct = totalIssues > 0 ? ((count / totalIssues) * 100).toFixed(1) : 0;
             const color = COLORS[idx % COLORS.length];
 
+            // Find the issueType ID for this label
             const issueKey = Object.entries(issueTypeMap || {}).find(([, v]) => v === name)?.[0];
-            const subIssues = issueKey ? Object.entries(byIssueType || {})
-              .filter(([k]) => {
-                const sub = subIssueMap?.[k];
-                return sub && String(sub.parent) === String(issueKey);
-              })
-              .sort((a, b) => b[1] - a[1]) : [];
+            // Find sub-issues from subIssueMap whose parent matches this issueType ID
+            const subIssues = issueKey
+              ? Object.entries(subIssueMap || {})
+                  .filter(([, sub]) => String(sub.parent) === String(issueKey))
+                  .map(([subKey, sub]) => [subKey, byIssueType?.[sub.label] || 0])
+                  .filter(([, count]) => count > 0)
+                  .sort((a, b) => b[1] - a[1])
+              : [];
 
             const hasSubs = subIssues.length > 0;
 
@@ -338,6 +341,7 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
 
                 {isOpen && subIssues.map(([subKey, subCount]) => {
                   const subLabel = subIssueMap?.[subKey]?.label || subKey;
+                  // subKey is the subIssueMap key (numeric string), label comes from subIssueMap
                   const subPct = totalIssues > 0 ? ((subCount / totalIssues) * 100).toFixed(1) : 0;
                   return (
                     <div key={subKey} style={{
@@ -379,15 +383,15 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
                     borderBottom: '1px solid var(--border)',
                     cursor: hasSubs ? 'pointer' : 'default'
                   }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     <span style={{
                       fontSize: 10, color: 'var(--ink3)',
                       visibility: hasSubs ? 'visible' : 'hidden',
                       transform: isOpen ? 'rotate(90deg)' : 'rotate(0)',
-                      transition: 'transform 0.15s', display: 'inline-block'
+                      transition: 'transform 0.15s', display: 'inline-block', flexShrink: 0
                     }}>▶</span>
                     <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                       {company.name}
                     </span>
                   </div>
