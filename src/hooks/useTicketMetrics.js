@@ -424,8 +424,8 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     const issueLabel = issueTypeMap[String(t.issueType)] || null;
 
     // Response time (hours)
-    // Response time — exclude low priority (priority 4) tickets
-    if (t.createDate && t.firstResponseDateTime && t.priority !== 4) {
+    // Response time — exclude low priority (priority 4) and internal InfoTank tickets (companyID 0)
+    if (t.createDate && t.firstResponseDateTime && t.priority !== 4 && t.companyID !== 0) {
       const hrs = (new Date(t.firstResponseDateTime) - new Date(t.createDate)) / (1000 * 60 * 60);
       if (hrs >= 0 && hrs < 720) {
         tech.responseTimes.push(hrs);

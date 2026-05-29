@@ -168,7 +168,7 @@ function TechGradeRow({ tech, isExpanded, onToggle }) {
                 detail={metrics.responseTime.avgMins != null
                   ? `${metrics.responseTime.avgMins}min avg · team ${metrics.responseTime.teamAvgMins}min`
                   : 'Insufficient data'}
-                subDetail="Perfect = ≤30min avg · 0 at 2hrs · excl. low priority"
+                subDetail="Perfect = ≤30min avg · 0 at 2hrs · excl. low priority & internal tickets"
               />
               <MetricBar
                 label="Resolution time"
