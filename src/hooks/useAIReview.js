@@ -12,6 +12,7 @@ export function useAIReview(api) {
   const [error, setError] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [prompts, setPrompts] = useState({ ticketReview: '', trendAnalysis: '' });
+  const [ignoredTrends, setIgnoredTrends] = useState([]);
   const pollRef = useRef(null);
 
   const applyStatus = (status) => {
@@ -21,6 +22,7 @@ export function useAIReview(api) {
     setReviewStats(status.reviewStats || {});
     if (status.trends) setTrends(status.trends);
     if (status.prompts) setPrompts(status.prompts);
+    if (status.ignoredTrends) setIgnoredTrends(status.ignoredTrends);
   };
 
   const stopPolling = () => {
@@ -147,6 +149,26 @@ export function useAIReview(api) {
     }
   }, []);
 
+  const ignoreTrend = useCallback(async (key) => {
+    setIgnoredTrends(prev => prev.includes(key) ? prev : [...prev, key]);
+    try {
+      const result = await api.aiReview.ignoreTrend(key);
+      setIgnoredTrends(result.ignoredTrends || []);
+    } catch (err) {
+      console.error('[AIReview] Ignore trend failed:', err.message);
+    }
+  }, []);
+
+  const unignoreTrend = useCallback(async (key) => {
+    setIgnoredTrends(prev => prev.filter(k => k !== key));
+    try {
+      const result = await api.aiReview.unignoreTrend(key);
+      setIgnoredTrends(result.ignoredTrends || []);
+    } catch (err) {
+      console.error('[AIReview] Unignore trend failed:', err.message);
+    }
+  }, []);
+
   const loadPrompts = useCallback(async () => {
     try {
       const result = await api.aiReview.getPrompts();
@@ -185,6 +207,7 @@ export function useAIReview(api) {
     error, loaded,
     loadStatus, runReview, setAction,
     addExclusion, removeExclusion,
-    prompts, loadPrompts, savePrompts, resetPrompts
+    prompts, loadPrompts, savePrompts, resetPrompts,
+    ignoredTrends, ignoreTrend, unignoreTrend
   };
 }

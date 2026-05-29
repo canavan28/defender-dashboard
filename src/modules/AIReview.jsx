@@ -674,6 +674,20 @@ function ExclusionPanel({ exclusions, companies, onClose, onAdd, onRemove }) {
                         </div>
                     ))}
                 </div>
+
+                {/* Show ignored toggle */}
+                {ignoredSet.size > 0 && (
+                    <div style={{ marginTop: 16, textAlign: 'center' }}>
+                        <button
+                            className="it-btn ghost"
+                            onClick={() => setShowIgnored(s => !s)}
+                            style={{ fontSize: 12, color: 'var(--ink4)' }}>
+                            {showIgnored
+                                ? `Hide ${ignoredSet.size} ignored`
+                                : `Show ${ignoredSet.size} ignored`}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -1198,7 +1212,8 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
         error, loaded,
         loadStatus, runReview, setAction,
         addExclusion, removeExclusion,
-        prompts, loadPrompts, savePrompts, resetPrompts
+        prompts, loadPrompts, savePrompts, resetPrompts,
+        ignoredTrends, ignoreTrend, unignoreTrend
     } = aiReview;
 
     const [filters, setFilters] = useState({
@@ -1266,7 +1281,7 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
             )}
 
             {/* Trend analysis — top of page */}
-            <TrendCard trends={trends} flags={flags} />
+            <TrendCard trends={trends} flags={flags} ignoredTrends={ignoredTrends} onIgnore={ignoreTrend} onUnignore={unignoreTrend} />
 
             <ReviewBanner
                 running={running} runState={runState}
