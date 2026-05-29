@@ -65,7 +65,10 @@ export function createApi(getToken) {
       run:              () => apiPost('/api/aireview/run', {}, getToken),
       action:           (ticketId, action) => apiPost('/api/aireview/action', { ticketId, action }, getToken),
       addExclusion:     (companyId, companyName, reason) => apiPost('/api/aireview/exclusions', { companyId, companyName, reason }, getToken),
-      removeExclusion:  (companyId) => apiDelete(`/api/aireview/exclusions/${companyId}`, getToken)
+      removeExclusion:  (companyId) => apiDelete(`/api/aireview/exclusions/${companyId}`, getToken),
+      getPrompts:       () => apiFetch('/api/aireview/prompts', getToken),
+      savePrompts:      (ticketReview, trendAnalysis) => apiPost('/api/aireview/prompts', { ticketReview, trendAnalysis }, getToken),
+      resetPrompts:     () => apiPost('/api/aireview/prompts/reset', {}, getToken)
     }
   };
 }
