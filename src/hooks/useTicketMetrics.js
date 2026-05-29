@@ -424,8 +424,13 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     const issueLabel = issueTypeMap[String(t.issueType)] || null;
 
     // Response time (hours)
-    // Response time — exclude low priority (priority 4) and internal InfoTank tickets (companyID 0)
-    if (t.createDate && t.firstResponseDateTime && t.priority !== 4 && t.companyID !== 0) {
+    // Response time — exclude low priority (priority 4), internal (companyID 0), and NJC (companyID 344)
+    // Also exclude Merged Tickets queue — add queueID here once confirmed
+    const EXCLUDE_RESPONSE_COMPANIES = new Set([0, 344]);
+    const EXCLUDE_RESPONSE_QUEUES = new Set([29683479, 29683378, 29683480]); // Merged Tickets, InfoTank Internal Projects, Sales
+    if (t.createDate && t.firstResponseDateTime && t.priority !== 4
+      && !EXCLUDE_RESPONSE_COMPANIES.has(t.companyID)
+      && !EXCLUDE_RESPONSE_QUEUES.has(t.queueID)) {
       const hrs = (new Date(t.firstResponseDateTime) - new Date(t.createDate)) / (1000 * 60 * 60);
       if (hrs >= 0 && hrs < 720) {
         tech.responseTimes.push(hrs);
