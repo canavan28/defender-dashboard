@@ -405,6 +405,150 @@ function FlagRowDetail({ flag }) {
     );
 }
 
+
+function PromptsPanel({ prompts, onClose, onSave, onReset }) {
+    const [ticketReview, setTicketReview] = useState(prompts.ticketReview || '');
+    const [trendAnalysis, setTrendAnalysis] = useState(prompts.trendAnalysis || '');
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [resetting, setResetting] = useState(false);
+
+    // Sync when prompts prop changes (after loadPrompts resolves)
+    const prevPrompts = prompts;
+    if (prompts.ticketReview && prompts.ticketReview !== ticketReview && !saving) {
+        setTicketReview(prompts.ticketReview);
+    }
+    if (prompts.trendAnalysis && prompts.trendAnalysis !== trendAnalysis && !saving) {
+        setTrendAnalysis(prompts.trendAnalysis);
+    }
+
+    const handleSave = async () => {
+        setSaving(true);
+        const ok = await onSave(ticketReview, trendAnalysis);
+        setSaving(false);
+        if (ok) {
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+        }
+    };
+
+    const handleReset = async () => {
+        setResetting(true);
+        const ok = await onReset();
+        setResetting(false);
+        // Parent will update prompts prop which syncs textareas above
+    };
+
+    const textareaStyle = {
+        width: '100%', fontFamily: 'DM Mono, monospace', fontSize: 12,
+        padding: '10px 12px', borderRadius: 6, lineHeight: 1.6,
+        border: '1px solid var(--border-strong)', outline: 'none',
+        color: 'var(--ink)', resize: 'vertical', boxSizing: 'border-box',
+        background: 'white'
+    };
+
+    return (
+        <div className="it-side-panel" style={{ width: 600 }}>
+            <div style={{
+                position: 'sticky', top: 0, zIndex: 2,
+                background: 'white', borderBottom: '1px solid var(--border)',
+                padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12
+            }}>
+                <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>AI Prompts</div>
+                    <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 1 }}>
+                        Full prompt replacement · Use placeholders for live data
+                    </div>
+                </div>
+                <div style={{ flex: 1 }} />
+                <button
+                    className="it-btn ghost"
+                    onClick={handleReset}
+                    disabled={resetting}
+                    style={{ color: 'var(--ink3)', fontSize: 12 }}>
+                    {resetting ? 'Resetting...' : 'Reset to defaults'}
+                </button>
+                <button
+                    className={`it-btn${saved ? '' : ' primary'}`}
+                    onClick={handleSave}
+                    disabled={saving}
+                    style={saved ? { background: 'var(--green)', color: 'white', borderColor: 'var(--green)' } : {}}>
+                    {saving ? 'Saving...' : saved ? '✓ Saved' : 'Save prompts'}
+                </button>
+                <button className="it-btn ghost" onClick={onClose}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {/* Placeholders reference */}
+                <div style={{
+                    padding: '10px 14px', borderRadius: 8,
+                    background: 'var(--ai-soft)', border: '1px solid #d6daff'
+                }}>
+                    <div className="it-eyebrow" style={{ marginBottom: 6, color: 'var(--ai-deep)' }}>
+                        Available placeholders
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {[
+                            { ph: '{{TICKETS}}', desc: 'Ticket review — JSON array of ticket summaries' },
+                            { ph: '{{COMPANY_GROUPINGS}}', desc: 'Ticket review — tickets grouped by company' },
+                            { ph: '{{COMPANY_COUNT}}', desc: 'Trend analysis — number of companies analyzed' },
+                            { ph: '{{COMPANY_DATA}}', desc: 'Trend analysis — company metadata JSON' },
+                            { ph: '{{TECH_COUNT}}', desc: 'Trend analysis — number of techs analyzed' },
+                            { ph: '{{TECH_DATA}}', desc: 'Trend analysis — tech metadata JSON' },
+                        ].map(({ ph, desc }) => (
+                            <div key={ph} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                <code style={{
+                                    fontSize: 11, background: 'white', padding: '1px 6px',
+                                    borderRadius: 4, border: '1px solid #d6daff',
+                                    color: 'var(--ai-deep)', whiteSpace: 'nowrap', flexShrink: 0
+                                }}>{ph}</code>
+                                <span style={{ fontSize: 12, color: 'var(--ink3)' }}>{desc}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Ticket Review Prompt */}
+                <div>
+                    <div className="it-eyebrow" style={{ marginBottom: 6 }}>Ticket Review Prompt</div>
+                    <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)', marginBottom: 8 }}>
+                        {'Used when reviewing individual tickets. Must include {{TICKETS}} and {{COMPANY_GROUPINGS}} placeholders. Must return a JSON array.'}
+                    </div>
+                    <textarea
+                        value={ticketReview}
+                        onChange={e => setTicketReview(e.target.value)}
+                        style={{ ...textareaStyle, minHeight: 320 }}
+                    />
+                    <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginTop: 4 }}>
+                        {ticketReview.length.toLocaleString()} characters
+                    </div>
+                </div>
+
+                {/* Trend Analysis Prompt */}
+                <div>
+                    <div className="it-eyebrow" style={{ marginBottom: 6 }}>Trend Analysis Prompt</div>
+                    <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)', marginBottom: 8 }}>
+                        {'Used for long-term pattern analysis. Must include {{COMPANY_DATA}} and {{TECH_DATA}} placeholders. Must return a JSON object with companyTrends, techPatterns, sentimentSignals arrays.'}
+                    </div>
+                    <textarea
+                        value={trendAnalysis}
+                        onChange={e => setTrendAnalysis(e.target.value)}
+                        style={{ ...textareaStyle, minHeight: 320 }}
+                    />
+                    <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginTop: 4 }}>
+                        {trendAnalysis.length.toLocaleString()} characters
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function ExclusionPanel({ exclusions, companies, onClose, onAdd, onRemove }) {
     const [q, setQ] = useState('');
     const [reason, setReason] = useState('');
@@ -1053,7 +1197,8 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
         running, runState,
         error, loaded,
         loadStatus, runReview, setAction,
-        addExclusion, removeExclusion
+        addExclusion, removeExclusion,
+        prompts, loadPrompts, savePrompts, resetPrompts
     } = aiReview;
 
     const [filters, setFilters] = useState({
@@ -1065,6 +1210,7 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
     const [expandedId, setExpandedId] = useState(null);
     const [openMenu, setOpenMenu] = useState(null);
     const [exclusionOpen, setExclusionOpen] = useState(false);
+    const [promptsOpen, setPromptsOpen] = useState(false);
 
     useEffect(() => {
         if (!loaded) loadStatus();
@@ -1211,6 +1357,13 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
                     </svg>
                     Exclusions
                 </button>
+                <button className="it-btn" onClick={() => { setPromptsOpen(true); loadPrompts(); }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                    Prompts
+                </button>
             </div>
 
             {/* Flag list */}
@@ -1342,6 +1495,15 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
                         </div>
                     )}
                 </div>
+            )}
+
+            {promptsOpen && (
+                <PromptsPanel
+                    prompts={prompts}
+                    onClose={() => setPromptsOpen(false)}
+                    onSave={savePrompts}
+                    onReset={resetPrompts}
+                />
             )}
 
             {exclusionOpen && (

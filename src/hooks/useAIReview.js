@@ -11,6 +11,7 @@ export function useAIReview(api) {
   const [runState, setRunState] = useState({ progress: 0, phase: 0 });
   const [error, setError] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [prompts, setPrompts] = useState({ ticketReview: '', trendAnalysis: '' });
   const pollRef = useRef(null);
 
   const applyStatus = (status) => {
@@ -19,6 +20,7 @@ export function useAIReview(api) {
     setLastRun(status.lastReviewRun);
     setReviewStats(status.reviewStats || {});
     if (status.trends) setTrends(status.trends);
+    if (status.prompts) setPrompts(status.prompts);
   };
 
   const stopPolling = () => {
@@ -145,12 +147,44 @@ export function useAIReview(api) {
     }
   }, []);
 
+  const loadPrompts = useCallback(async () => {
+    try {
+      const result = await api.aiReview.getPrompts();
+      setPrompts(result);
+    } catch (err) {
+      console.error('[AIReview] Failed to load prompts:', err.message);
+    }
+  }, []);
+
+  const savePrompts = useCallback(async (ticketReview, trendAnalysis) => {
+    try {
+      const result = await api.aiReview.savePrompts(ticketReview, trendAnalysis);
+      if (result.ok) setPrompts(result.prompts);
+      return result.ok;
+    } catch (err) {
+      console.error('[AIReview] Failed to save prompts:', err.message);
+      return false;
+    }
+  }, []);
+
+  const resetPrompts = useCallback(async () => {
+    try {
+      const result = await api.aiReview.resetPrompts();
+      setPrompts({ ticketReview: result.ticketReview, trendAnalysis: result.trendAnalysis });
+      return true;
+    } catch (err) {
+      console.error('[AIReview] Failed to reset prompts:', err.message);
+      return false;
+    }
+  }, []);
+
   return {
     flags, exclusions, companies,
     lastRun, reviewStats, trends,
     running, runState,
     error, loaded,
     loadStatus, runReview, setAction,
-    addExclusion, removeExclusion
+    addExclusion, removeExclusion,
+    prompts, loadPrompts, savePrompts, resetPrompts
   };
 }
