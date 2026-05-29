@@ -159,7 +159,7 @@ function TechGradeRow({ tech, isExpanded, onToggle }) {
                 score={metrics.sla.score}
                 maxScore={metrics.sla.maxScore}
                 detail={`${metrics.sla.breaches} breach${metrics.sla.breaches !== 1 ? 'es' : ''} out of ${metrics.sla.eligible} eligible tickets`}
-                subDetail={`Perfect = 0 breaches · -20% per breach`}
+                subDetail="Perfect = ≤5 breaches · -10% per breach above 5"
               />
               <MetricBar
                 label="Response time"
@@ -168,7 +168,7 @@ function TechGradeRow({ tech, isExpanded, onToggle }) {
                 detail={metrics.responseTime.avgMins != null
                   ? `${metrics.responseTime.avgMins}min avg · team ${metrics.responseTime.teamAvgMins}min`
                   : 'Insufficient data'}
-                subDetail="Perfect = ≤30min · -10% per 5min over"
+                subDetail="Perfect = ≤30min avg · 0 at 2hrs · excl. low priority"
               />
               <MetricBar
                 label="Resolution time"
@@ -186,7 +186,7 @@ function TechGradeRow({ tech, isExpanded, onToggle }) {
                 score={metrics.escalation.score}
                 maxScore={metrics.escalation.maxScore}
                 detail={`${metrics.escalation.count} escalation${metrics.escalation.count !== 1 ? 's' : ''} out of ${metrics.escalation.totalTickets} tickets`}
-                subDetail="Perfect = <5 · -5% per escalation over 5"
+                subDetail="Perfect = ≤5 upward escalations · -5% per above 5"
               />
               <MetricBar
                 label="Notes quality"

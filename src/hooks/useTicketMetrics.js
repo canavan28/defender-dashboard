@@ -424,7 +424,8 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     const issueLabel = issueTypeMap[String(t.issueType)] || null;
 
     // Response time (hours)
-    if (t.createDate && t.firstResponseDateTime) {
+    // Response time — exclude low priority (priority 4) tickets
+    if (t.createDate && t.firstResponseDateTime && t.priority !== 4) {
       const hrs = (new Date(t.firstResponseDateTime) - new Date(t.createDate)) / (1000 * 60 * 60);
       if (hrs >= 0 && hrs < 720) {
         tech.responseTimes.push(hrs);
@@ -517,19 +518,22 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     const t = techRaw[id];
     if (t.assignedTickets.length < MIN_TICKETS) return null;
 
-    // 1. SLA Breach Rate (20pts) — 0 breaches = 20, each breach = -20% of 20
+    // 1. SLA Breach Rate (20pts) — ≤5 breaches = 20, each above 5 = -10% of 20
+    //    5=20, 6=18, 7=16... 15+=0
     const slaScore = t.slaEligible > 0
-      ? Math.max(0, 20 * (1 - t.slaBreaches * 0.2))
+      ? Math.max(0, 20 * (1 - Math.max(0, t.slaBreaches - 5) * 0.1))
       : 20; // no SLA tickets = not penalized
 
-    // 2. Response Time (20pts) — ≤30min (0.5hr) = 20, each 5min (0.0833hr) slower = -10% of 20
+    // 2. Response Time (20pts) — ≤30min = 20, 2hrs = 0, linear between
+    //    score = 20 * (1 - (avgMins - 30) / 90), clamped 0-20
+    //    30min=20, 75min=10, 120min=0
     let responseScore = 0, avgResponseHrs = null;
     if (t.responseTimes.length >= 5) {
       avgResponseHrs = t.responseTimes.reduce((a, b) => a + b, 0) / t.responseTimes.length;
-      const PERFECT_RESPONSE = 0.5;   // 30 minutes
-      const STEP = 0.0833;            // 5 minutes
-      const stepsOver = Math.max(0, (avgResponseHrs - PERFECT_RESPONSE) / STEP);
-      responseScore = Math.max(0, 20 * (1 - stepsOver * 0.1));
+      const avgMins = avgResponseHrs * 60;
+      const PERFECT_MINS = 30;
+      const FAIL_MINS = 120; // 2 hours
+      responseScore = Math.max(0, Math.min(20, 20 * (1 - (avgMins - PERFECT_MINS) / (FAIL_MINS - PERFECT_MINS))));
     }
 
     // 3. Resolution Time (20pts) — avg hours logged on completed tickets
@@ -543,8 +547,10 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
       resolutionScore = Math.max(0, 20 * (1 - stepsOver * 0.1));
     }
 
-    // 4. Escalation Rate (15pts) — <5 escalations = 15, each past 5 = -5% of 15
-    const escalationsOver = Math.max(0, t.escalatedCount - 4);
+    // 4. Escalation (15pts) — ≤5 escalations = 15, each above 5 = -5% of 15
+    //    Only counts upward escalations (tier 1→2, tier 1→3, tier 2→3)
+    //    Brandon (T2) and Rob (T3) can never be penalized since no one is above them
+    const escalationsOver = Math.max(0, t.escalatedCount - 5);
     const escalationScore = Math.max(0, 15 * (1 - escalationsOver * 0.05));
 
     // 5. Notes Quality (15pts) — % of assigned tickets NOT flagged for documentation
