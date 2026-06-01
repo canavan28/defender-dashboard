@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { createApi } from '../utils/api';
 import { getQuarterKey } from './useTicketMetrics';
 
@@ -9,6 +9,7 @@ export function useDashboard(getToken) {
   const [error, setError] = useState(null);
   const [lastSynced, setLastSynced] = useState(null);
   const [selectedQuarterKey, setSelectedQuarterKey] = useState(null);
+  const pollRef = useRef(null);
 
   const api = createApi(getToken);
 
@@ -42,24 +43,73 @@ export function useDashboard(getToken) {
     }
   }, [getToken]);
 
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
   const fullRefresh = useCallback(async () => {
     setError(null);
+    setFullRefreshStep('Starting full rebuild...');
+
     try {
-      setFullRefreshStep('Rebuilding ticket history... this may take a few minutes');
-      await api.tickets.refreshTickets();
+      // Step 1: Fire refreshtickets — don't await response, it may timeout
+      // We catch the error silently and rely on polling to detect completion
+      setFullRefreshStep('Rebuilding ticket history... (this takes a few minutes)');
+      try {
+        await api.tickets.refreshTickets();
+      } catch (err) {
+        // Timeout is expected — Railway continues working even if fetch dies
+        console.log('[FullRefresh] refreshTickets fetch ended (may have timed out):', err.message);
+      }
 
+      // Step 2: Fire refreshtimeentries
       setFullRefreshStep('Rebuilding time entry history...');
-      await api.tickets.refreshTimeEntries();
+      try {
+        await api.tickets.refreshTimeEntries();
+      } catch (err) {
+        console.log('[FullRefresh] refreshTimeEntries fetch ended (may have timed out):', err.message);
+      }
 
-      setFullRefreshStep('Loading updated data...');
-      const response = await api.tickets.all();
-      processResponse(response);
+      // Step 3: Poll /all until we get a fresh cache timestamp
+      setFullRefreshStep('Waiting for rebuild to complete...');
+      const startedAt = Date.now();
+      const previousBuiltAt = rawData?.cacheInfo?.historicalBuiltAt;
+
+      stopPolling();
+      pollRef.current = setInterval(async () => {
+        try {
+          const response = await api.tickets.all();
+          const newBuiltAt = response?.cacheInfo?.historicalBuiltAt;
+
+          // Check if cache has been rebuilt (new timestamp) or timeout after 15min
+          const elapsed = Date.now() - startedAt;
+          const cacheRefreshed = newBuiltAt && newBuiltAt !== previousBuiltAt;
+
+          if (cacheRefreshed) {
+            stopPolling();
+            processResponse(response);
+            setFullRefreshStep(null);
+          } else if (elapsed > 15 * 60 * 1000) {
+            stopPolling();
+            setFullRefreshStep(null);
+            setError('Full refresh timed out after 15 minutes. Try again or check Railway logs.');
+          } else {
+            setFullRefreshStep(`Waiting for rebuild to complete... (${Math.round(elapsed / 1000)}s)`);
+          }
+        } catch (err) {
+          console.log('[FullRefresh] Poll error:', err.message);
+        }
+      }, 10000); // poll every 10 seconds
+
     } catch (err) {
-      setError(err.message);
-    } finally {
+      stopPolling();
       setFullRefreshStep(null);
+      setError(err.message);
     }
-  }, [getToken]);
+  }, [getToken, rawData]);
 
   return {
     rawData, loading, fullRefreshStep, error,
