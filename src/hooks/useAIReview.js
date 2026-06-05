@@ -13,6 +13,8 @@ export function useAIReview(api) {
   const [loaded, setLoaded] = useState(false);
   const [prompts, setPrompts] = useState({ ticketReview: '', trendAnalysis: '' });
   const [ignoredTrends, setIgnoredTrends] = useState([]);
+  const [techAnalysis, setTechAnalysis] = useState({});
+  const [techAnalysisRunning, setTechAnalysisRunning] = useState(null); // techId currently running
   const pollRef = useRef(null);
 
   const applyStatus = (status) => {
@@ -149,6 +151,29 @@ export function useAIReview(api) {
     }
   }, []);
 
+  const loadTechAnalysis = useCallback(async () => {
+    try {
+      const result = await api.aiReview.getTechAnalysis();
+      setTechAnalysis(result.techAnalysis || {});
+    } catch (err) {
+      console.error('[TechAnalysis] Failed to load:', err.message);
+    }
+  }, []);
+
+  const runTechAnalysis = useCallback(async (techId) => {
+    setTechAnalysisRunning(techId);
+    try {
+      const result = await api.aiReview.analyzeTech(techId);
+      if (result.ok && result.analysis) {
+        setTechAnalysis(prev => ({ ...prev, [techId]: result.analysis }));
+      }
+    } catch (err) {
+      console.error('[TechAnalysis] Failed to run:', err.message);
+    } finally {
+      setTechAnalysisRunning(null);
+    }
+  }, []);
+
   const ignoreTrend = useCallback(async (key) => {
     setIgnoredTrends(prev => prev.includes(key) ? prev : [...prev, key]);
     try {
@@ -208,6 +233,7 @@ export function useAIReview(api) {
     loadStatus, runReview, setAction,
     addExclusion, removeExclusion,
     prompts, loadPrompts, savePrompts, resetPrompts,
-    ignoredTrends, ignoreTrend, unignoreTrend
+    ignoredTrends, ignoreTrend, unignoreTrend,
+    techAnalysis, techAnalysisRunning, loadTechAnalysis, runTechAnalysis
   };
 }

@@ -140,6 +140,7 @@ export default function App() {
                 metrics={metrics}
                 selectedQuarterKey={selectedQuarterKey}
                 onSelectQuarter={setSelectedQuarterKey}
+                aiReview={aiReview}
               />
             )}
             {activeTab === 'Time analytics' && (
