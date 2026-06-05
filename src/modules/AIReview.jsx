@@ -1409,13 +1409,60 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
                 </div>
             ) : (
                 <div className="it-card" style={{ padding: 0, overflow: 'visible' }}>
+                    {/* Bulk action bar */}
+                    {selectedIds.size > 0 && (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '10px 18px',
+                            background: 'var(--ai-soft)',
+                            borderBottom: '1px solid #d6daff',
+                            position: 'sticky', top: 0, zIndex: 10
+                        }}>
+                            <span className="it-mono" style={{ fontSize: 12, color: 'var(--ai-deep)', fontWeight: 600 }}>
+                                {selectedIds.size} selected
+                            </span>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                {[
+                                    { action: 'escalated', label: 'Escalate', color: 'var(--red)',   bg: '#fee2e2' },
+                                    { action: 'assigned',  label: 'Assign',   color: '#1e3a8a',      bg: '#dbeafe' },
+                                    { action: 'ignored',   label: 'Ignore',   color: 'var(--ink3)',  bg: 'var(--slate-soft)' },
+                                    { action: 'resolved',  label: 'Resolve',  color: 'var(--green)', bg: 'var(--green-soft)' }
+                                ].map(({ action, label, color, bg }) => (
+                                    <button key={action} onClick={() => bulkAction(action)} style={{
+                                        padding: '4px 14px', borderRadius: 999, border: 'none',
+                                        background: bg, color, fontWeight: 600,
+                                        fontSize: 12.5, cursor: 'pointer',
+                                        fontFamily: 'DM Sans, sans-serif'
+                                    }}>
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                            <div style={{ flex: 1 }} />
+                            <button onClick={() => setSelectedIds(new Set())} style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                fontSize: 12, color: 'var(--ink3)', fontFamily: 'DM Sans, sans-serif'
+                            }}>
+                                Clear selection
+                            </button>
+                        </div>
+                    )}
+
+                    {/* List header */}
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: '110px 88px 1fr 200px 130px 110px 100px',
+                        gridTemplateColumns: '32px 110px 88px 1fr 200px 130px 110px 100px',
                         gap: 12, padding: '10px 16px 10px 18px',
                         borderBottom: '1px solid var(--border)',
                         background: 'var(--slate-soft)'
                     }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <input type="checkbox"
+                                checked={visible.length > 0 && selectedIds.size === visible.length}
+                                onChange={toggleSelectAll}
+                                style={{ accentColor: 'var(--ai)', cursor: 'pointer' }}
+                            />
+                        </div>
                         {['Severity', 'Ticket', 'Title / Summary', 'Company', 'Flag type', 'Action', ''].map(h => (
                             <div key={h} className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>
                                 {h}
@@ -1433,10 +1480,17 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
                                     onClick={() => setExpandedId(isExpanded ? null : f.id)}
                                     style={{
                                         display: 'grid',
-                                        gridTemplateColumns: '110px 88px 1fr 200px 130px 110px 100px',
+                                        gridTemplateColumns: '32px 110px 88px 1fr 200px 130px 110px 100px',
                                         gap: 12, padding: '13px 16px 13px 18px',
                                         alignItems: 'center', cursor: 'pointer'
                                     }}>
+                                    <div onClick={e => e.stopPropagation()}>
+                                        <input type="checkbox"
+                                            checked={selectedIds.has(f.id)}
+                                            onChange={() => toggleSelect(f.id)}
+                                            style={{ accentColor: 'var(--ai)', cursor: 'pointer' }}
+                                        />
+                                    </div>
                                     <div><SeverityPill sev={f.sev} /></div>
                                     <a
                                         href={f.ticketUrl} target="_blank" rel="noreferrer"
