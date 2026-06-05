@@ -193,10 +193,10 @@ export function useAIReview(api) {
     try {
       const result = await api.aiReview.resetPrompts();
       setPrompts({ ticketReview: result.ticketReview, trendAnalysis: result.trendAnalysis });
-      return true;
+      return result; // return full result so PromptsPanel can update its local state
     } catch (err) {
       console.error('[AIReview] Failed to reset prompts:', err.message);
-      return false;
+      return null;
     }
   }, []);
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const SEV = {
     critical: { label: 'Critical', fg: '#991b1b', bg: '#fee2e2', stripe: '#dc2626' },
@@ -407,20 +407,21 @@ function FlagRowDetail({ flag }) {
 
 
 function PromptsPanel({ prompts, onClose, onSave, onReset }) {
-    const [ticketReview, setTicketReview] = useState(prompts.ticketReview || '');
-    const [trendAnalysis, setTrendAnalysis] = useState(prompts.trendAnalysis || '');
+    const [ticketReview, setTicketReview] = useState('');
+    const [trendAnalysis, setTrendAnalysis] = useState('');
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [resetting, setResetting] = useState(false);
+    const initialized = useRef(false);
 
-    // Sync when prompts prop changes (after loadPrompts resolves)
-    const prevPrompts = prompts;
-    if (prompts.ticketReview && prompts.ticketReview !== ticketReview && !saving) {
-        setTicketReview(prompts.ticketReview);
-    }
-    if (prompts.trendAnalysis && prompts.trendAnalysis !== trendAnalysis && !saving) {
-        setTrendAnalysis(prompts.trendAnalysis);
-    }
+    // Only sync from props on first load, never overwrite user edits
+    useEffect(() => {
+        if (!initialized.current && (prompts.ticketReview || prompts.trendAnalysis)) {
+            setTicketReview(prompts.ticketReview || '');
+            setTrendAnalysis(prompts.trendAnalysis || '');
+            initialized.current = true;
+        }
+    }, [prompts.ticketReview, prompts.trendAnalysis]);
 
     const handleSave = async () => {
         setSaving(true);
@@ -434,9 +435,13 @@ function PromptsPanel({ prompts, onClose, onSave, onReset }) {
 
     const handleReset = async () => {
         setResetting(true);
-        const ok = await onReset();
+        const result = await onReset();
         setResetting(false);
-        // Parent will update prompts prop which syncs textareas above
+        if (result) {
+            // onReset returns the default prompts — update local state directly
+            setTicketReview(typeof result === 'object' ? (result.ticketReview || '') : '');
+            setTrendAnalysis(typeof result === 'object' ? (result.trendAnalysis || '') : '');
+        }
     };
 
     const textareaStyle = {
