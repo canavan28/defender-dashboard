@@ -1231,6 +1231,7 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
     const [openMenu, setOpenMenu] = useState(null);
     const [exclusionOpen, setExclusionOpen] = useState(false);
     const [promptsOpen, setPromptsOpen] = useState(false);
+    const [selectedIds, setSelectedIds] = useState(new Set());
 
     useEffect(() => {
         if (!loaded) loadStatus();
@@ -1255,7 +1256,32 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
         return (a.company || '').localeCompare(b.company || '');
     });
 
-    const setF = (k, v) => setFilters(prev => ({ ...prev, [k]: v }));
+    const setF = (k, v) => {
+        setFilters(prev => ({ ...prev, [k]: v }));
+        setSelectedIds(new Set());
+    };
+
+    const toggleSelect = (id) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === visible.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(visible.map(f => f.id)));
+        }
+    };
+
+    const bulkAction = async (action) => {
+        const ids = [...selectedIds];
+        await Promise.all(ids.map(id => setAction(id, action)));
+        setSelectedIds(new Set());
+    };
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative' }}>
