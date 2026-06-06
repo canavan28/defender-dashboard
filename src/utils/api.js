@@ -70,7 +70,9 @@ export function createApi(getToken) {
       savePrompts:      (ticketReview, trendAnalysis) => apiPost('/api/aireview/prompts', { ticketReview, trendAnalysis }, getToken),
       resetPrompts:     () => apiPost('/api/aireview/prompts/reset', {}, getToken),
       ignoreTrend:      (key) => apiPost('/api/aireview/trends/ignore', { key }, getToken),
-      unignoreTrend:    (key) => apiDelete(`/api/aireview/trends/ignore/${encodeURIComponent(key)}`, getToken)
+      unignoreTrend:    (key) => apiDelete(`/api/aireview/trends/ignore/${encodeURIComponent(key)}`, getToken),
+      getTechAnalysis:  () => apiFetch('/api/aireview/tech-analysis', getToken),
+      analyzeTech:      (techId) => apiPost('/api/aireview/analyze-tech', { techId }, getToken)
     }
   };
 }
