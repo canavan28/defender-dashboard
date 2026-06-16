@@ -9,8 +9,8 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
   const {
     ytd, quarterlyTrend,
     avgResolutionDays, slaBreachRate,
-    byIssueType, byCompanyList,
-    selectedQLabel, issueTypeMap, subIssueMap
+    byIssueTypeDetailed, byCompanyList,
+    selectedQLabel
   } = metrics;
 
   const [hoverBar, setHoverBar] = useState(null);
@@ -57,9 +57,9 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
   const barSlot = barCount > 0 ? innerW / barCount : innerW;
   const barW = Math.min(barSlot * 0.6, 48);
 
-  // Issue List
-  const issueEntries = Object.entries(byIssueType || {}).sort((a, b) => b[1] - a[1]);
-  const totalIssues = issueEntries.reduce((s, [, v]) => s + v, 0);
+  // Issue List — now pre-built with nested sub-issues from useTicketMetrics
+  const issueEntries = byIssueTypeDetailed || [];
+  const totalIssues = issueEntries.reduce((s, item) => s + item.count, 0);
 
   // Company list totals
   const totalCompanyTickets = (byCompanyList || []).reduce((s, c) => s + c.count, 0);
@@ -292,29 +292,17 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
             <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>%</div>
           </div>
 
-          {/* Issue view */}
-          {listView === 'issue' && issueEntries.map(([name, count], idx) => {
-            const isOpen = expandedIssues.has(name);
-            const pct = totalIssues > 0 ? ((count / totalIssues) * 100).toFixed(1) : 0;
+          {/* Issue view — uses pre-built byIssueTypeDetailed with real sub-issue counts */}
+          {listView === 'issue' && issueEntries.map((issue, idx) => {
+            const isOpen = expandedIssues.has(issue.label);
+            const pct = totalIssues > 0 ? ((issue.count / totalIssues) * 100).toFixed(1) : 0;
             const color = COLORS[idx % COLORS.length];
-
-            // Find the issueType ID for this label
-            const issueKey = Object.entries(issueTypeMap || {}).find(([, v]) => v === name)?.[0];
-            // Find sub-issues from subIssueMap whose parent matches this issueType ID
-            const subIssues = issueKey
-              ? Object.entries(subIssueMap || {})
-                  .filter(([, sub]) => String(sub.parent) === String(issueKey))
-                  .map(([subKey, sub]) => [subKey, byIssueType?.[sub.label] || 0])
-                  .filter(([, count]) => count > 0)
-                  .sort((a, b) => b[1] - a[1])
-              : [];
-
-            const hasSubs = subIssues.length > 0;
+            const hasSubs = issue.subIssues && issue.subIssues.length > 0;
 
             return (
-              <div key={name}>
+              <div key={issue.label}>
                 <div
-                  onClick={() => hasSubs && toggleIssue(name)}
+                  onClick={() => hasSubs && toggleIssue(issue.label)}
                   style={{
                     display: 'grid', gridTemplateColumns: '1fr 80px 56px',
                     gap: 12, padding: '9px 4px', alignItems: 'center',
@@ -329,30 +317,28 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
                       transition: 'transform 0.15s', display: 'inline-block'
                     }}>▶</span>
                     <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, color: 'var(--ink)' }}>{name}</span>
+                    <span style={{ fontSize: 13, color: 'var(--ink)' }}>{issue.label}</span>
                   </div>
                   <div className="it-mono" style={{ fontSize: 12.5, color: 'var(--ink)', textAlign: 'right' }}>
-                    {count.toLocaleString()}
+                    {issue.count.toLocaleString()}
                   </div>
                   <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)', textAlign: 'right' }}>
                     {pct}%
                   </div>
                 </div>
 
-                {isOpen && subIssues.map(([subKey, subCount]) => {
-                  const subLabel = subIssueMap?.[subKey]?.label || subKey;
-                  // subKey is the subIssueMap key (numeric string), label comes from subIssueMap
-                  const subPct = totalIssues > 0 ? ((subCount / totalIssues) * 100).toFixed(1) : 0;
+                {isOpen && issue.subIssues.map(sub => {
+                  const subPct = totalIssues > 0 ? ((sub.count / totalIssues) * 100).toFixed(1) : 0;
                   return (
-                    <div key={subKey} style={{
+                    <div key={sub.label} style={{
                       display: 'grid', gridTemplateColumns: '1fr 80px 56px',
                       gap: 12, padding: '7px 4px 7px 32px', alignItems: 'center',
                       borderBottom: '1px solid var(--border)',
                       background: '#fafbfc'
                     }}>
-                      <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>└ {subLabel}</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>└ {sub.label}</div>
                       <div className="it-mono" style={{ fontSize: 12, color: 'var(--ink2)', textAlign: 'right' }}>
-                        {subCount.toLocaleString()}
+                        {sub.count.toLocaleString()}
                       </div>
                       <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)', textAlign: 'right' }}>
                         {subPct}%
