@@ -159,8 +159,17 @@ export function EditList({ items, onChange, editing, ordered = false, placeholde
 // =================== The repeated time-horizon "snapshot" block ===================
 // Shared shape for Current Situation, 2-Year Journey, 3-Year Picture, 1-Year Plan.
 
+function RefHint({ value }) {
+  if (!value) return null;
+  return (
+    <div style={{ fontSize: 11.5, color: VTO.gold, marginTop: 4, fontStyle: 'italic' }}>
+      Last year: {value}
+    </div>
+  );
+}
+
 export function SnapshotBlock({
-  horizon, title, accent, accentSoft, snap, editing, update,
+  horizon, title, accent, accentSoft, snap, editing, update, prevSnap,
   money1Label = 'Gross Profit', money2Label = 'Net Profit',
   listKey = 'looksLike', listLabel = 'What does it look like?', listOrdered = false, dateLabel = 'Future Date',
 }) {
@@ -168,6 +177,7 @@ export function SnapshotBlock({
     <div style={{ flex: 1 }}>
       <span style={vtoStyles.fieldLabel}>{label}</span>
       <EditText value={snap[k]} editing={editing} onChange={(v) => update(k, v)} accent={accent} mono strong placeholder={placeholder} />
+      {editing && !snap[k] && <RefHint value={prevSnap?.[k]} />}
     </div>
   );
   return (
@@ -180,6 +190,7 @@ export function SnapshotBlock({
         <div style={{ minWidth: 160 }}>
           <span style={{ ...vtoStyles.fieldLabel, textAlign: 'right' }}>{dateLabel}</span>
           <EditText value={snap.date} editing={editing} onChange={(v) => update('date', v)} accent={accent} mono placeholder="e.g. Apr 30, 2028" />
+          {editing && !snap.date && <RefHint value={prevSnap?.date} />}
         </div>
       </div>
       <div style={{ padding: 17 }}>
@@ -190,6 +201,7 @@ export function SnapshotBlock({
         <div style={{ marginBottom: 15 }}>
           <span style={vtoStyles.fieldLabel}>Measurables</span>
           <EditArea value={snap.measurables} editing={editing} onChange={(v) => update('measurables', v)} accent={accent} minHeight={52} placeholder="Key numbers at this horizon…" />
+          {editing && !snap.measurables && <RefHint value={prevSnap?.measurables} />}
         </div>
         <div>
           <span style={vtoStyles.fieldLabel}>{listLabel}</span>
@@ -282,20 +294,24 @@ export const TargetBody = (key) => function TargetBodyInner({ doc, editing, up }
 
 export function CurrentBody({ doc, editing, up }) {
   return <SnapshotBlock horizon="Today · Baseline" title="Where we are now" accent={VTO.vision} accentSoft={VTO.visionSoft}
-    snap={doc.vision.current} editing={editing} update={(k, val) => up(['vision', 'current', k], val)} dateLabel="As Of" />;
+    snap={doc.vision.current} editing={editing} update={(k, val) => up(['vision', 'current', k], val)} dateLabel="As Of"
+    prevSnap={doc.prevSnapshots?.current} />;
 }
 export function TwoYearBody({ doc, editing, up }) {
   return <SnapshotBlock horizon="2-Year · Milestone" title="The journey there" accent={VTO.vision} accentSoft={VTO.visionSoft}
-    snap={doc.vision.twoYear} editing={editing} update={(k, val) => up(['vision', 'twoYear', k], val)} />;
+    snap={doc.vision.twoYear} editing={editing} update={(k, val) => up(['vision', 'twoYear', k], val)}
+    prevSnap={doc.prevSnapshots?.twoYear} />;
 }
 export function ThreeYearBody({ doc, editing, up }) {
   return <SnapshotBlock horizon="3-Year · Horizon" title="Where we'll be" accent={VTO.vision} accentSoft={VTO.visionSoft}
-    snap={doc.vision.threeYear} editing={editing} update={(k, val) => up(['vision', 'threeYear', k], val)} />;
+    snap={doc.vision.threeYear} editing={editing} update={(k, val) => up(['vision', 'threeYear', k], val)}
+    prevSnap={doc.prevSnapshots?.threeYear} />;
 }
 export function OneYearBody({ doc, editing, up }) {
   return <SnapshotBlock horizon="1-Year · This Year" title="This year's plan" accent={VTO.traction} accentSoft={VTO.tractionSoft}
     snap={doc.traction.oneYear} editing={editing} update={(k, val) => up(['traction', 'oneYear', k], val)}
-    listKey="goals" listLabel="Goals for the Year" listOrdered />;
+    listKey="goals" listLabel="Goals for the Year" listOrdered
+    prevSnap={doc.prevSnapshots?.oneYear} />;
 }
 
 export function IssuesBody({ doc, editing, up }) {
