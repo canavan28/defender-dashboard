@@ -52,6 +52,47 @@ async function apiDelete(path, getToken) {
   return res.json();
 }
 
+// 1. Add this helper alongside apiFetch/apiPost/apiDelete (PATCH isn't used
+//    elsewhere yet, so it doesn't exist in the current file):
+
+async function apiPatch(path, body, getToken) {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+// 0. Add a top-level `me` call (not namespaced, since it's not tied to one
+//    feature) for the frontend to check isOwner status on load:
+
+export function createApi(getToken) {
+  return {
+    me: () => apiFetch('/api/me', getToken),
+
+    tickets: {
+      // ...unchanged
+    },
+    aiReview: {
+      // ...unchanged
+    },
+    vto: {
+      history:  ()                       => apiFetch(`/api/vto`, getToken),
+      get:      (id)                     => apiFetch(`/api/vto/${id}`, getToken),
+      create:   (year)                   => apiPost(`/api/vto`, { year }, getToken),
+      update:   (id, path, value)        => apiPatch(`/api/vto/${id}`, { path, value }, getToken),
+      finalize: (id, authoredBy)         => apiPost(`/api/vto/${id}/finalize`, { authoredBy }, getToken),
+      unlock:   (id)                     => apiPost(`/api/vto/${id}/unlock`, {}, getToken)
+    }
+  };
+}
+
 export function createApi(getToken) {
   return {
     tickets: {
