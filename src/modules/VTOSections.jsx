@@ -84,36 +84,48 @@ export function VTOIcon({ name, size = 18 }) {
 
 // =================== Editable primitives ===================
 
-export function EditText({ value, onChange, editing, placeholder, accent = VTO.vision, mono = false, strong = false, big = false }) {
+export function EditText({ value, onChange, editing, placeholder, accent = VTO.vision, mono = false, strong = false, big = false, center = false }) {
   if (!editing) {
     const empty = !value;
-    return <span style={{ fontFamily: mono ? IT.mono : IT.font, fontSize: big ? 19 : 14, fontWeight: strong ? 600 : 400, color: empty ? IT.ink4 : IT.ink }}>{empty ? '—' : value}</span>;
+    return <span style={{ fontFamily: mono ? IT.mono : IT.font, fontSize: big ? 19 : 14, fontWeight: strong ? 600 : 400, color: empty ? IT.ink4 : IT.ink, display: center ? 'block' : 'inline', textAlign: center ? 'center' : undefined }}>{empty ? '—' : value}</span>;
   }
   return (
     <input value={value || ''} placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)} onFocus={focusOn(accent)} onBlur={focusOff()}
-      style={{ ...vtoStyles.input, fontFamily: mono ? IT.mono : IT.font, fontSize: big ? 19 : 14, fontWeight: strong ? 600 : 400 }}/>
+      style={{ ...vtoStyles.input, fontFamily: mono ? IT.mono : IT.font, fontSize: big ? 19 : 14, fontWeight: strong ? 600 : 400, textAlign: center ? 'center' : 'left' }}/>
   );
 }
 
-export function EditArea({ value, onChange, editing, placeholder, accent = VTO.vision, minHeight = 80 }) {
+export function EditArea({ value, onChange, editing, placeholder, accent = VTO.vision, minHeight = 80, center = false }) {
   if (!editing) {
     const empty = !value;
-    return <div style={{ fontSize: 14, lineHeight: 1.62, color: empty ? IT.ink4 : IT.ink2, whiteSpace: 'pre-wrap' }}>{empty ? '—' : value}</div>;
+    return <div style={{ fontSize: 14, lineHeight: 1.62, color: empty ? IT.ink4 : IT.ink2, whiteSpace: 'pre-wrap', textAlign: center ? 'center' : undefined }}>{empty ? '—' : value}</div>;
   }
   return (
     <textarea value={value || ''} placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)} onFocus={focusOn(accent)} onBlur={focusOff()}
-      style={{ ...vtoStyles.area, minHeight }}/>
+      style={{ ...vtoStyles.area, minHeight, textAlign: center ? 'center' : 'left' }}/>
   );
 }
 
-export function EditList({ items, onChange, editing, ordered = false, placeholder = 'Add an item…', accent = VTO.vision, dense = false }) {
+export function EditList({ items, onChange, editing, ordered = false, placeholder = 'Add an item…', accent = VTO.vision, dense = false, reorderable = false }) {
   const [draft, setDraft] = useState('');
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
   const items_ = items || [];
   const add = () => { const v = draft.trim(); if (!v) return; onChange([...items_, v]); setDraft(''); };
   const update = (i, v) => onChange(items_.map((it, idx) => idx === i ? v : it));
   const remove = (i) => onChange(items_.filter((_, idx) => idx !== i));
+
+  const handleDrop = (dropIndex) => {
+    if (dragIndex === null || dragIndex === dropIndex) { setDragIndex(null); setOverIndex(null); return; }
+    const next = items_.slice();
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(dropIndex, 0, moved);
+    onChange(next);
+    setDragIndex(null);
+    setOverIndex(null);
+  };
 
   if (!editing) {
     if (items_.length === 0) return <div style={{ fontSize: 14, color: IT.ink4 }}>—</div>;
@@ -131,7 +143,19 @@ export function EditList({ items, onChange, editing, ordered = false, placeholde
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
       {items_.map((it, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div key={i}
+          draggable={reorderable}
+          onDragStart={reorderable ? () => setDragIndex(i) : undefined}
+          onDragOver={reorderable ? (e) => { e.preventDefault(); setOverIndex(i); } : undefined}
+          onDragLeave={reorderable ? () => setOverIndex(prev => prev === i ? null : prev) : undefined}
+          onDrop={reorderable ? (e) => { e.preventDefault(); handleDrop(i); } : undefined}
+          onDragEnd={reorderable ? () => { setDragIndex(null); setOverIndex(null); } : undefined}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: dragIndex === i ? 0.4 : 1, borderTop: overIndex === i && dragIndex !== null && dragIndex !== i ? `2px solid ${accent}` : '2px solid transparent' }}>
+          {reorderable && (
+            <span title="Drag to reorder" style={{ cursor: 'grab', flexShrink: 0, color: IT.ink4, display: 'flex', alignItems: 'center' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.4"/><circle cx="16" cy="6" r="1.4"/><circle cx="8" cy="12" r="1.4"/><circle cx="16" cy="12" r="1.4"/><circle cx="8" cy="18" r="1.4"/><circle cx="16" cy="18" r="1.4"/></svg>
+            </span>
+          )}
           <span style={{ fontFamily: IT.mono, width: 20, textAlign: 'right', fontSize: 12, color: IT.ink4, flexShrink: 0 }}>{ordered ? `${i + 1}.` : '•'}</span>
           <input value={it} onChange={(e) => update(i, e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
@@ -142,6 +166,7 @@ export function EditList({ items, onChange, editing, ordered = false, placeholde
         </div>
       ))}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {reorderable && <span style={{ width: 13, flexShrink: 0 }}></span>}
         <span style={{ width: 20, flexShrink: 0 }}></span>
         <input value={draft} placeholder={placeholder}
           onChange={(e) => setDraft(e.target.value)}
@@ -221,23 +246,23 @@ export function CoreValuesBody({ doc, editing, up }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {v.coreValues.map((cv, i) => (
-        <div key={i} style={{ display: 'flex', gap: 13, alignItems: 'flex-start', padding: editing ? 0 : '2px 0' }}>
-          <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: VTO.visionSoft, color: accent }}>
-            <VTOIcon name="values" size={15} />
-          </span>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <EditText value={cv.title} editing={editing} strong accent={accent} onChange={(val) => up(['vision', 'coreValues', i, 'title'], val)} placeholder="Value name" />
-            <EditArea value={cv.desc} editing={editing} accent={accent} minHeight={46} onChange={(val) => up(['vision', 'coreValues', i, 'desc'], val)} placeholder="What this value means in practice…" />
-          </div>
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, position: 'relative', padding: editing ? '0 28px' : '2px 0' }}>
           {editing && (
-            <button onClick={() => up(['vision', 'coreValues'], v.coreValues.filter((_, idx) => idx !== i))} title="Remove value" className="vto-iconbtn vto-iconbtn-del" style={{ marginTop: 1 }}>
+            <button onClick={() => up(['vision', 'coreValues'], v.coreValues.filter((_, idx) => idx !== i))} title="Remove value" className="vto-iconbtn vto-iconbtn-del" style={{ position: 'absolute', top: 0, right: 0 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           )}
+          <span style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: VTO.visionSoft, color: accent, fontFamily: IT.mono, fontSize: 11, fontWeight: 600 }}>{i + 1}</span>
+          <div style={{ width: '100%', textAlign: 'center' }}>
+            <EditText value={cv.title} editing={editing} strong center accent={accent} onChange={(val) => up(['vision', 'coreValues', i, 'title'], val)} placeholder="Value name" />
+          </div>
+          <div style={{ width: '100%', textAlign: 'center' }}>
+            <EditArea value={cv.desc} editing={editing} center accent={accent} minHeight={46} onChange={(val) => up(['vision', 'coreValues', i, 'desc'], val)} placeholder="What this value means in practice…" />
+          </div>
         </div>
       ))}
       {editing && (
-        <button className="it-btn sm" style={{ alignSelf: 'flex-start', marginLeft: 43 }} onClick={() => up(['vision', 'coreValues'], [...v.coreValues, { title: '', desc: '' }])}>
+        <button className="it-btn sm" style={{ alignSelf: 'center' }} onClick={() => up(['vision', 'coreValues'], [...v.coreValues, { title: '', desc: '' }])}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
           Add core value
         </button>
@@ -318,7 +343,7 @@ export function IssuesBody({ doc, editing, up }) {
   const t = doc.traction;
   return (
     <>
-      <EditList items={t.issues} editing={editing} accent={VTO.traction} dense onChange={(val) => up(['traction', 'issues'], val)} placeholder="Add an issue — capture freely, prioritize later…" />
+      <EditList items={t.issues} editing={editing} accent={VTO.traction} dense reorderable onChange={(val) => up(['traction', 'issues'], val)} placeholder="Add an issue — capture freely, prioritize later…" />
       {!editing && t.issues.length > 0 && (
         <div style={{ fontFamily: IT.mono, fontSize: 11.5, color: IT.ink4, marginTop: 14 }}>{t.issues.length} issues captured · Identify · Discuss · Solve</div>
       )}
@@ -330,10 +355,21 @@ export function RocksBody({ doc, editing, up }) {
   const accent = VTO.traction;
   const rocks = doc.traction.rocks.items || [];
   const r = doc.traction.rocks;
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
   const updRocks = (k, val) => up(['traction', 'rocks', k], val);
   const setRock = (i, key, val) => up(['traction', 'rocks', 'items'], rocks.map((rk, idx) => idx === i ? { ...rk, [key]: val } : rk));
   const addRock = () => up(['traction', 'rocks', 'items'], [...rocks, { desc: '', owner: '' }]);
   const removeRock = (i) => up(['traction', 'rocks', 'items'], rocks.filter((_, idx) => idx !== i));
+  const handleDrop = (dropIndex) => {
+    if (dragIndex === null || dragIndex === dropIndex) { setDragIndex(null); setOverIndex(null); return; }
+    const next = rocks.slice();
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(dropIndex, 0, moved);
+    up(['traction', 'rocks', 'items'], next);
+    setDragIndex(null);
+    setOverIndex(null);
+  };
 
   return (
     <div style={{ borderRadius: 11, overflow: 'hidden', border: `1px solid ${VTO.cardBorder}`, borderLeft: `3px solid ${accent}`, background: '#fff' }}>
@@ -368,7 +404,19 @@ export function RocksBody({ doc, editing, up }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
           {rocks.map((rk, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: editing ? 'flex-start' : 'center' }}>
+            <div key={i}
+              draggable={editing}
+              onDragStart={editing ? () => setDragIndex(i) : undefined}
+              onDragOver={editing ? (e) => { e.preventDefault(); setOverIndex(i); } : undefined}
+              onDragLeave={editing ? () => setOverIndex(prev => prev === i ? null : prev) : undefined}
+              onDrop={editing ? (e) => { e.preventDefault(); handleDrop(i); } : undefined}
+              onDragEnd={editing ? () => { setDragIndex(null); setOverIndex(null); } : undefined}
+              style={{ display: 'flex', gap: 8, alignItems: editing ? 'flex-start' : 'center', opacity: dragIndex === i ? 0.4 : 1, borderTop: overIndex === i && dragIndex !== null && dragIndex !== i ? `2px solid ${accent}` : '2px solid transparent' }}>
+              {editing && (
+                <span title="Drag to reorder" style={{ cursor: 'grab', flexShrink: 0, color: IT.ink4, display: 'flex', alignItems: 'center', marginTop: 7 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.4"/><circle cx="16" cy="6" r="1.4"/><circle cx="8" cy="12" r="1.4"/><circle cx="16" cy="12" r="1.4"/><circle cx="8" cy="18" r="1.4"/><circle cx="16" cy="18" r="1.4"/></svg>
+                </span>
+              )}
               <span style={{ fontFamily: IT.mono, flexShrink: 0, width: 24, height: 24, borderRadius: 7, marginTop: editing ? 7 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: VTO.tractionSoft, color: accent, fontSize: 11, fontWeight: 600 }}>{i + 1}</span>
               {editing ? (
                 <>
