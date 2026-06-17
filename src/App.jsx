@@ -8,6 +8,7 @@ import { SLAHealth } from './modules/SLAHealth';
 import { StaffingSignals } from './modules/StaffingSignals';
 import { AIReview } from './modules/AIReview';
 import { ActionItems } from './modules/ActionItems';
+import { VTOTab } from './modules/VTO';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
 import { useAuth } from './hooks/useAuth';
@@ -29,7 +30,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('Ticket overview');
   const [aiFilter, setAiFilter] = useState(null);
 
+  // Whether the signed-in user is flagged as an owner (controls visibility
+  // of the VTO tab). Fetched once per session from /api/me. Defaults to
+  // false until positively confirmed -- fails closed, never shows the tab
+  // optimistically while this is loading or if the request errors.
+  const [isOwner, setIsOwner] = useState(false);
+
   useEffect(() => { if (account) sync(); }, [account]);
+
+  useEffect(() => {
+    if (!account) return;
+    let cancelled = false;
+    api.me()
+      .then(res => { if (!cancelled) setIsOwner(!!res.isOwner); })
+      .catch(() => { if (!cancelled) setIsOwner(false); });
+    return () => { cancelled = true; };
+  }, [account]);
 
   const unactionedCount = aiReview.flags.filter(f => f.action === 'unactioned').length;
   const criticalUnactionedCount = aiReview.flags.filter(
@@ -94,6 +110,7 @@ export default function App() {
         }}
         aiUnactionedCount={unactionedCount}
         actionItemsCount={actionItemsCount}
+        isOwner={isOwner}
       />
 
       <main style={{ flex: 1, padding: '20px 24px 28px' }}>
@@ -174,6 +191,10 @@ export default function App() {
 
         {activeTab === 'Action Items' && (
           <ActionItems aiReview={aiReview} />
+        )}
+
+        {activeTab === 'VTO' && isOwner && (
+          <VTOTab getToken={getToken} currentUserName={account?.name} />
         )}
       </main>
     </div>

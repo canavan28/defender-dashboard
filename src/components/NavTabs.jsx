@@ -6,9 +6,12 @@ const TABS = [
   { id: 'Staffing signals', label: 'Staffing signals' },
   { id: 'AI Review',        label: 'AI Review', isAI: true },
   { id: 'Action Items',     label: 'Action Items', isAction: true },
+  { id: 'VTO',              label: 'VTO', isOwnerOnly: true },
 ];
 
-export function NavTabs({ active, onChange, aiUnactionedCount = 0, actionItemsCount = 0 }) {
+export function NavTabs({ active, onChange, aiUnactionedCount = 0, actionItemsCount = 0, isOwner = false }) {
+  const visibleTabs = TABS.filter(tab => !tab.isOwnerOnly || isOwner);
+
   return (
     <nav style={{
       display: 'flex',
@@ -17,7 +20,7 @@ export function NavTabs({ active, onChange, aiUnactionedCount = 0, actionItemsCo
       padding: '0 24px',
       background: 'var(--card)'
     }}>
-      {TABS.map(tab => {
+      {visibleTabs.map(tab => {
         const isActive = active === tab.id;
         return (
           <button
@@ -31,11 +34,11 @@ export function NavTabs({ active, onChange, aiUnactionedCount = 0, actionItemsCo
               padding: '14px 14px 13px',
               fontSize: 14,
               color: isActive
-                ? (tab.isAI || tab.isAction ? 'var(--ai-deep)' : 'var(--ink)')
+                ? (tab.isAI || tab.isAction ? 'var(--ai-deep)' : (tab.isOwnerOnly ? '#c66a3a' : 'var(--ink)'))
                 : 'var(--ink3)',
               fontWeight: 500,
               borderBottom: isActive
-                ? `2px solid ${tab.isAI || tab.isAction ? 'var(--ai)' : 'var(--blue)'}`
+                ? `2px solid ${tab.isAI || tab.isAction ? 'var(--ai)' : (tab.isOwnerOnly ? '#c66a3a' : 'var(--blue)')}`
                 : '2px solid transparent',
               marginBottom: -1,
               borderRadius: '6px 6px 0 0',
@@ -58,6 +61,12 @@ export function NavTabs({ active, onChange, aiUnactionedCount = 0, actionItemsCo
                 stroke="currentColor" strokeWidth="2">
                 <path d="M9 11l3 3L22 4"/>
                 <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+            )}
+            {tab.isOwnerOnly && (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2">
+                <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/>
               </svg>
             )}
             {tab.label}

@@ -39,22 +39,6 @@ async function apiPost(path, body, getToken) {
   return res.json();
 }
 
-async function apiDelete(path, getToken) {
-  const token = await getToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-// 1. Add this helper alongside apiFetch/apiPost/apiDelete (PATCH isn't used
-//    elsewhere yet, so it doesn't exist in the current file):
-
 async function apiPatch(path, body, getToken) {
   const token = await getToken();
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -69,32 +53,23 @@ async function apiPatch(path, body, getToken) {
   return res.json();
 }
 
-// 0. Add a top-level `me` call (not namespaced, since it's not tied to one
-//    feature) for the frontend to check isOwner status on load:
+async function apiDelete(path, getToken) {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
 
 export function createApi(getToken) {
   return {
     me: () => apiFetch('/api/me', getToken),
 
-    tickets: {
-      // ...unchanged
-    },
-    aiReview: {
-      // ...unchanged
-    },
-    vto: {
-      history:  ()                       => apiFetch(`/api/vto`, getToken),
-      get:      (id)                     => apiFetch(`/api/vto/${id}`, getToken),
-      create:   (year)                   => apiPost(`/api/vto`, { year }, getToken),
-      update:   (id, path, value)        => apiPatch(`/api/vto/${id}`, { path, value }, getToken),
-      finalize: (id, authoredBy)         => apiPost(`/api/vto/${id}/finalize`, { authoredBy }, getToken),
-      unlock:   (id)                     => apiPost(`/api/vto/${id}/unlock`, {}, getToken)
-    }
-  };
-}
-
-export function createApi(getToken) {
-  return {
     tickets: {
       all:                () => apiFetch('/api/tickets/all', getToken),
       refreshTickets:     () => apiFetchLongRunning('/api/tickets/refreshtickets', getToken),
@@ -114,6 +89,14 @@ export function createApi(getToken) {
       unignoreTrend:    (key) => apiDelete(`/api/aireview/trends/ignore/${encodeURIComponent(key)}`, getToken),
       getTechAnalysis:  () => apiFetch('/api/aireview/tech-analysis', getToken),
       analyzeTech:      (techId) => apiPost('/api/aireview/analyze-tech', { techId }, getToken)
+    },
+    vto: {
+      history:  ()                 => apiFetch(`/api/vto`, getToken),
+      get:      (id)                => apiFetch(`/api/vto/${id}`, getToken),
+      create:   (year)              => apiPost(`/api/vto`, { year }, getToken),
+      update:   (id, path, value)   => apiPatch(`/api/vto/${id}`, { path, value }, getToken),
+      finalize: (id, authoredBy)    => apiPost(`/api/vto/${id}/finalize`, { authoredBy }, getToken),
+      unlock:   (id)                => apiPost(`/api/vto/${id}/unlock`, {}, getToken)
     }
   };
 }
