@@ -193,18 +193,24 @@ function RefHint({ value }) {
   );
 }
 
+// Standalone money field — must live OUTSIDE SnapshotBlock so React never
+// remounts it on re-render. An inline component definition inside a function
+// body causes unmount/remount on every keystroke, losing focus each time.
+function MoneyField({ label, fieldKey, snap, editing, update, accent, prevSnap, placeholder }) {
+  return (
+    <div style={{ flex: 1 }}>
+      <span style={vtoStyles.fieldLabel}>{label}</span>
+      <EditText value={snap[fieldKey]} editing={editing} onChange={(v) => update(fieldKey, v)} accent={accent} mono placeholder={placeholder} />
+      {editing && !snap[fieldKey] && <RefHint value={prevSnap?.[fieldKey]} />}
+    </div>
+  );
+}
+
 export function SnapshotBlock({
   horizon, title, accent, accentSoft, snap, editing, update, prevSnap,
   money1Label = 'Gross Profit', money2Label = 'Net Profit',
   listKey = 'looksLike', listLabel = 'What does it look like?', listOrdered = false, dateLabel = 'Future Date',
 }) {
-  const Money = ({ label, k, placeholder }) => (
-    <div style={{ flex: 1 }}>
-      <span style={vtoStyles.fieldLabel}>{label}</span>
-      <EditText value={snap[k]} editing={editing} onChange={(v) => update(k, v)} accent={accent} mono strong placeholder={placeholder} />
-      {editing && !snap[k] && <RefHint value={prevSnap?.[k]} />}
-    </div>
-  );
   return (
     <div style={{ borderRadius: 11, overflow: 'hidden', border: `1px solid ${VTO.cardBorder}`, borderLeft: `3px solid ${accent}`, background: '#fff' }}>
       <div style={{ padding: '13px 17px', borderBottom: `1px solid ${VTO.cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: accentSoft }}>
@@ -220,8 +226,8 @@ export function SnapshotBlock({
       </div>
       <div style={{ padding: 17 }}>
         <div style={{ display: 'flex', gap: 16, marginBottom: 15 }}>
-          <Money label={money1Label} k="money1" placeholder="$0.0M" />
-          <Money label={money2Label} k="money2" placeholder="$0k" />
+          <MoneyField label={money1Label} fieldKey="money1" snap={snap} editing={editing} update={update} accent={accent} prevSnap={prevSnap} placeholder="$0.0M" />
+          <MoneyField label={money2Label} fieldKey="money2" snap={snap} editing={editing} update={update} accent={accent} prevSnap={prevSnap} placeholder="$0k" />
         </div>
         <div style={{ marginBottom: 15 }}>
           <span style={vtoStyles.fieldLabel}>Measurables</span>

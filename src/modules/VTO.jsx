@@ -130,7 +130,17 @@ function VTOForm({ vto, editing, setEditing, up, onBack, onFinalize, onUnlock, i
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0 4px 14px', borderBottom: `1px solid ${VTO.cardBorder}`, marginBottom: 14 }}>
+      <style>{`
+        @media print {
+          body > * { display: none !important; }
+          [data-vto-printable] { display: block !important; }
+          [data-vto-printable] .vto-no-print { display: none !important; }
+          [data-vto-printable] [data-vto-scroll] { overflow: visible !important; max-height: none !important; }
+          [data-vto-printable] .vto-panel { border: none !important; padding: 0 !important; }
+          [data-vto-printable] .vto-card { break-inside: avoid; box-shadow: none !important; }
+        }
+      `}</style>
+      <div className="vto-no-print" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0 4px 14px', borderBottom: `1px solid ${VTO.cardBorder}`, marginBottom: 14 }}>
         <button className="it-btn ghost" onClick={onBack}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 18l-6-6 6-6"/></svg>
           History
@@ -148,6 +158,12 @@ function VTOForm({ vto, editing, setEditing, up, onBack, onFinalize, onUnlock, i
             {isNew ? 'New · pre-filled where evergreen' : (vto.savedDate ? `Saved ${vto.savedDate} · ${vto.authoredBy}` : 'In progress · autosaving')}
           </div>
         </div>
+        {!editing && (
+          <button className="it-btn ghost" onClick={() => window.print()} title="Save as PDF via browser print dialog">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+            Save as PDF
+          </button>
+        )}
         {isFinal ? (
           <button className="it-btn" onClick={onUnlock}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>
@@ -250,7 +266,7 @@ export function VTOTab({ getToken, currentUserName }) {
   const latestLabel = history[0]?.label;
 
   return (
-    <div style={{ height: '100%', minHeight: 0 }}>
+    <div data-vto-printable style={{ height: '100%', minHeight: 0 }}>
       <style>{`
         .vto-panel { height: 100%; min-height: 0; display: flex; flex-direction: column;
           background: ${VTO.paper}; border: 1px solid ${VTO.paperEdge}; border-radius: 16px; padding: 22px; }
