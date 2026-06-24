@@ -393,7 +393,7 @@ function TechGradeRow({ tech, isExpanded, onToggle, analysis, isRunning, onRunAn
                     : `Only ${metrics.fcr.eligible} eligible tickets (need 10+)`}
                 subDetail={metrics.fcr.notApplicable
                   ? 'Points redistributed across other metrics'
-                  : "Perfect = ≥90% · -10% per 5% below 90%"}"
+                  : "Perfect = ≥90% · -10% per 5% below 90%"}
               />
             </div>
           </div>
