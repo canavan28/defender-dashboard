@@ -345,17 +345,17 @@ function TechGradeRow({ tech, isExpanded, onToggle, analysis, isRunning, onRunAn
                 label="SLA compliance"
                 score={metrics.sla.score}
                 maxScore={metrics.sla.maxScore}
-                detail={`${metrics.sla.breaches} breach${metrics.sla.breaches !== 1 ? 'es' : ''} out of ${metrics.sla.eligible} eligible tickets`}
-                subDetail="Perfect = ≤5 breaches · -10% per breach above 5"
+                detail={`${metrics.sla.breachPct}% breach rate · ${metrics.sla.breaches} of ${metrics.sla.eligible} SLA tickets`}
+                subDetail="Perfect = ≤1% · score 0 at ≥2%"
               />
               <MetricBar
                 label="Response time"
                 score={metrics.responseTime.score}
                 maxScore={metrics.responseTime.maxScore}
                 detail={metrics.responseTime.avgMins != null
-                  ? `${metrics.responseTime.avgMins}min avg · team ${metrics.responseTime.teamAvgMins}min`
-                  : 'Insufficient data'}
-                subDetail="Perfect = ≤30min avg · 0 at 2hrs · excl. low priority & internal tickets"
+                  ? `${metrics.responseTime.avgMins}min avg · team ${metrics.responseTime.teamAvgMins}min · ${metrics.responseTime.sampleSize} tickets`
+                  : 'Insufficient data (need 5+ eligible tickets)'}
+                subDetail="First time entry per ticket · Perfect = ≤30min · 0 at 2hrs · excl. low priority & internal"
               />
               <MetricBar
                 label="Resolution time"
@@ -386,10 +386,14 @@ function TechGradeRow({ tech, isExpanded, onToggle, analysis, isRunning, onRunAn
                 label="First contact resolution"
                 score={metrics.fcr.score}
                 maxScore={metrics.fcr.maxScore}
-                detail={metrics.fcr.rate != null
-                  ? `${metrics.fcr.rate}% one-touch close · ${metrics.fcr.oneTouchCount} of ${metrics.fcr.eligible} tickets`
-                  : `Only ${metrics.fcr.eligible} eligible tickets (need 10+)`}
-                subDetail="Perfect = ≥90% · -10% per 5% below 90%"
+                detail={metrics.fcr.notApplicable
+                  ? 'N/A — escalation point (T2/T3 receive tickets as second touch)'
+                  : metrics.fcr.rate != null
+                    ? `${metrics.fcr.rate}% one-touch close · ${metrics.fcr.oneTouchCount} of ${metrics.fcr.eligible} tickets`
+                    : `Only ${metrics.fcr.eligible} eligible tickets (need 10+)`}
+                subDetail={metrics.fcr.notApplicable
+                  ? 'Points redistributed across other metrics'
+                  : "Perfect = ≥90% · -10% per 5% below 90%"}"
               />
             </div>
           </div>
@@ -535,12 +539,12 @@ export function TechCapacity({ metrics, selectedQuarterKey, onSelectQuarter, aiR
           </button>
           <div style={{ display: 'flex', gap: 16 }}>
             {[
-              { label: 'SLA', pts: 20 },
-              { label: 'Response', pts: 20 },
-              { label: 'Resolution', pts: 20 },
-              { label: 'Escalation', pts: 15 },
-              { label: 'Notes', pts: 15 },
-              { label: 'FCR', pts: 10 }
+              { label: 'SLA', pts: '20/22' },
+              { label: 'Response', pts: '20/22' },
+              { label: 'Resolution', pts: '20/22' },
+              { label: 'Escalation', pts: '15/17' },
+              { label: 'Notes', pts: '15/17' },
+              { label: 'FCR', pts: '10/N/A' }
             ].map(({ label, pts }) => (
               <div key={label} style={{ textAlign: 'center' }}>
                 <div className="it-mono" style={{ fontSize: 10.5, color: 'var(--ink4)' }}>{label}</div>

@@ -186,13 +186,11 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     }
   });
 
-  // Flat count map (kept for backward compatibility with tech grading etc.)
   const byIssueType = {};
   Object.entries(byIssueTypeRaw).forEach(([label, data]) => {
     byIssueType[label] = data.count;
   });
 
-  // Nested structure for UI drill-down (issue type -> sub-issues with counts)
   const byIssueTypeDetailed = Object.entries(byIssueTypeRaw)
     .map(([label, data]) => ({
       label,
@@ -272,7 +270,6 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     }))
     .sort((a, b) => b.hours - a.hours);
 
-  // Total hours
   const totalHours = parseFloat(
     teSource.reduce((s, te) => s + (te.hoursWorked || 0), 0).toFixed(1)
   );
@@ -288,7 +285,6 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     ? Math.round((totalBillableHours / totalHours) * 100)
     : 0;
 
-  // Notes coverage
   const entriesWithNotes = teSource.filter(
     te => (te.summaryNotes && te.summaryNotes.trim().length > 0) ||
           (te.internalNotes && te.internalNotes.trim().length > 0)
@@ -297,7 +293,6 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     ? Math.round((entriesWithNotes / teSource.length) * 100)
     : 0;
 
-  // Hours by issue type with sub issue breakdown
   const hoursByIssue = {};
   teSource.forEach(te => {
     const ticket = ticketMap[te.ticketID];
@@ -334,7 +329,6 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     }))
     .sort((a, b) => b.hours - a.hours);
 
-  // ── Hours by company (with issue type sub-rows) ───────────────────────────
   const hoursByCompanyRaw = {};
   teSource.forEach(te => {
     const ticket = ticketMap[te.ticketID];
@@ -390,13 +384,23 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     ? (((lastCompleteQCount - lastCompleteQPriorCount) / lastCompleteQPriorCount) * 100).toFixed(0)
     : 0;
 
-  // ── Tech Grading (revised scoring model) ────────────────────────────────────
-  // Weights: SLA 20, Response 20, Resolution 20, Escalation 15, Notes 15, FCR 10
-  // Perfect score thresholds:
-  //   SLA: 0 breaches | Response: ≤30min avg | Resolution: ≤30min avg hours logged
-  //   Escalation: <5/quarter | Notes: 0 doc flags | FCR: ≥90% one-touch close
+  // ── Tech Grading ──────────────────────────────────────────────────────────
+  // Tier 1 weights: SLA=20, Response=20, Resolution=20, Escalation=15, Notes=15, FCR=10
+  // Tier 2/3 weights: SLA=22, Response=22, Resolution=22, Escalation=17, Notes=17, FCR=N/A
+  // (T2/T3 are escalation points — FCR is not meaningful for them)
+  //
+  // Response time: uses earliest time entry dateWorked per ticket, NOT firstResponseDateTime
+  // (firstResponseDateTime is unreliable in AutoTask — set on close, not on first touch)
+  //
+  // SLA: scored as a breach percentage (slaBreaches/slaEligible*100)
+  // Perfect = ≤1%, score = 0 at 2%, linear between
+
   const MIN_TICKETS = 30;
-  const OUTLIER_THRESHOLD = 1.25; // 1.25x team avg = outlier
+  const OUTLIER_THRESHOLD = 1.25;
+
+  // Tier 2/3 tech IDs — FCR excluded for these
+  const TIER2_3_IDS = new Set([29682910, 29682889, 29682904, 29682899]);
+
   const gradeTicketSource = selectedQTickets.length > 0 ? selectedQTickets : allTickets;
   const gradeTeSource = filterTimeEntries(
     selectedQTimeEntries.length > 0 ? selectedQTimeEntries : (timeEntries || [])
@@ -410,34 +414,43 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     29682904: 3, 29682899: 3
   };
 
+  // Build ticket -> hours logged map AND earliest time entry per ticket
+  const ticketHoursMap = {};
+  const ticketFirstTouchMap = {}; // ticketID -> earliest dateWorked (ms)
+  gradeTeSource.forEach(te => {
+    if (!te.ticketID) return;
+    // Total hours logged
+    ticketHoursMap[te.ticketID] = (ticketHoursMap[te.ticketID] || 0) + (te.hoursWorked || 0);
+    // Earliest touch per ticket
+    if (te.dateWorked) {
+      const ms = new Date(te.dateWorked).getTime();
+      if (!ticketFirstTouchMap[te.ticketID] || ms < ticketFirstTouchMap[te.ticketID]) {
+        ticketFirstTouchMap[te.ticketID] = ms;
+      }
+    }
+  });
+
   // Build per-tech raw data
   const techRaw = {};
   gradeTechIds.forEach(id => {
     techRaw[id] = {
       name: resourceMap[id], id,
       assignedTickets: [],
-      responseTimes: [],        // hours from create to firstResponse
-      slaBreaches: 0,           // tickets where firstResponse > firstResponseDue
-      slaEligible: 0,           // tickets with firstResponseDueDateTime
+      responseTimes: [],        // hours from createDate to first time entry
+      slaBreaches: 0,
+      slaEligible: 0,
       escalatedCount: 0,
       timeEntries: [],
-      hoursPerCompletedTicket: [], // hours logged on completed tickets
-      oneTouchCount: 0,         // Is One Touch Close = Yes
-      oneTouchEligible: 0,      // tickets with the field present
-      docFlaggedTickets: new Set(), // ticket numbers flagged for documentation
-      // For issue type outlier analysis
-      byIssueType: {}           // issueTypeLabel -> { responseTimes, hoursLogged, escalations, tickets }
+      hoursPerCompletedTicket: [],
+      oneTouchCount: 0,
+      oneTouchEligible: 0,
+      byIssueType: {}
     };
   });
 
-  // Build ticket -> hours logged map from time entries
-  const ticketHoursMap = {};
-  gradeTeSource.forEach(te => {
-    if (!te.ticketID) return;
-    ticketHoursMap[te.ticketID] = (ticketHoursMap[te.ticketID] || 0) + (te.hoursWorked || 0);
-  });
+  const EXCLUDE_RESPONSE_COMPANIES = new Set([0, 344]);
+  const EXCLUDE_RESPONSE_QUEUES = new Set([29683479, 29683378, 29683480]);
 
-  // Process tickets
   gradeTicketSource.forEach(t => {
     const id = t.assignedResourceID;
     if (!id || !techRaw[id]) return;
@@ -446,15 +459,15 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
 
     const issueLabel = issueTypeMap[String(t.issueType)] || null;
 
-    // Response time — exclude low priority (priority 4), internal (companyID 0), and NJC (companyID 344)
-    // Also exclude Merged Tickets, InfoTank Internal Projects, Sales queues
-    const EXCLUDE_RESPONSE_COMPANIES = new Set([0, 344]);
-    const EXCLUDE_RESPONSE_QUEUES = new Set([29683479, 29683378, 29683480]);
-    if (t.createDate && t.firstResponseDateTime && t.priority !== 4
+    // Response time — use earliest time entry on this ticket, NOT firstResponseDateTime
+    // Exclude low priority, internal, NJC, and non-support queues
+    if (t.createDate && ticketFirstTouchMap[t.id] != null
+      && t.priority !== 4
       && !EXCLUDE_RESPONSE_COMPANIES.has(t.companyID)
       && !EXCLUDE_RESPONSE_QUEUES.has(t.queueID)) {
-      const hrs = (new Date(t.firstResponseDateTime) - new Date(t.createDate)) / (1000 * 60 * 60);
-      if (hrs >= 0 && hrs < 720) {
+      const hrs = (ticketFirstTouchMap[t.id] - new Date(t.createDate).getTime()) / (1000 * 60 * 60);
+      // Only count if response was within 24 hours (filters out tickets untouched for days)
+      if (hrs >= 0 && hrs < 24) {
         tech.responseTimes.push(hrs);
         if (issueLabel) {
           if (!tech.byIssueType[issueLabel]) tech.byIssueType[issueLabel] = { responseTimes: [], hoursLogged: [], escalations: 0, tickets: 0 };
@@ -464,7 +477,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
       }
     }
 
-    // SLA breach
+    // SLA breach (still uses firstResponseDueDateTime vs firstResponseDateTime for SLA contract compliance)
     if (t.firstResponseDueDateTime) {
       tech.slaEligible++;
       if (!t.firstResponseDateTime || new Date(t.firstResponseDateTime) > new Date(t.firstResponseDueDateTime)) {
@@ -472,7 +485,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
       }
     }
 
-    // Resolution hours — hours logged on completed tickets
+    // Resolution hours
     if (t.completedDate && ticketHoursMap[t.id] != null) {
       const hrs = ticketHoursMap[t.id];
       tech.hoursPerCompletedTicket.push(hrs);
@@ -494,7 +507,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
       }
     }
 
-    // FCR — Is One Touch Close field
+    // FCR
     const oneTouchField = t.userDefinedFields?.find(f => f.name === 'Is One Touch Close');
     if (oneTouchField) {
       tech.oneTouchEligible++;
@@ -502,22 +515,16 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     }
   });
 
-  // Collect time entries for notes quality
   gradeTeSource.forEach(te => {
     const id = te.resourceID;
     if (!id || !techRaw[id]) return;
     techRaw[id].timeEntries.push(te);
   });
 
-  // Notes quality: use documentation flags from reviewed metadata if available
+  // Notes quality: use AI review doc flags if available
   const reviewedMeta = rawData.reviewedMeta || {};
-  Object.entries(reviewedMeta).forEach(([ticketNum, meta]) => {
-    if (meta?.flagType === 'documentation' && meta?.techId && techRaw[meta.techId]) {
-      techRaw[meta.techId].docFlaggedTickets.add(ticketNum);
-    }
-  });
 
-  // Team-wide averages for outlier comparison
+  // Team-wide averages
   const allResponseTimes = Object.values(techRaw).flatMap(t => t.responseTimes);
   const allHoursPerTicket = Object.values(techRaw).flatMap(t => t.hoursPerCompletedTicket);
   const teamAvgResponseHrs = allResponseTimes.length
@@ -525,7 +532,7 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
   const teamAvgHoursPerTicket = allHoursPerTicket.length
     ? allHoursPerTicket.reduce((a, b) => a + b, 0) / allHoursPerTicket.length : null;
 
-  // Issue type team averages for outlier detection
+  // Issue type team averages
   const issueTypeTeamAvg = {};
   const allIssueTypes = new Set(Object.values(techRaw).flatMap(t => Object.keys(t.byIssueType)));
   allIssueTypes.forEach(issue => {
@@ -545,42 +552,56 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     const t = techRaw[id];
     if (t.assignedTickets.length < MIN_TICKETS) return null;
 
-    // 1. SLA Breach Rate (20pts) — ≤5 breaches = 20, each above 5 = -10% of 20
-    const slaScore = t.slaEligible > 0
-      ? Math.max(0, 20 * (1 - Math.max(0, t.slaBreaches - 5) * 0.1))
-      : 20;
+    const isTier2or3 = TIER2_3_IDS.has(id);
 
-    // 2. Response Time (20pts) — ≤30min = 20, 2hrs = 0, linear between
+    // Weights depend on tier
+    const W = isTier2or3
+      ? { sla: 22, response: 22, resolution: 22, escalation: 17, notes: 17, fcr: 0 }
+      : { sla: 20, response: 20, resolution: 20, escalation: 15, notes: 15, fcr: 10 };
+
+    // 1. SLA Breach Rate — scored as percentage
+    // Perfect = ≤1% breach rate, score = 0 at ≥2%, linear between
+    const slaBreachPct = t.slaEligible > 0 ? (t.slaBreaches / t.slaEligible) * 100 : 0;
+    const PERFECT_SLA = 1.0;  // 1%
+    const FAIL_SLA = 2.0;     // 2%
+    const slaScore = t.slaEligible > 0
+      ? Math.max(0, Math.min(W.sla, W.sla * (1 - (slaBreachPct - PERFECT_SLA) / (FAIL_SLA - PERFECT_SLA))))
+      : W.sla; // no SLA tickets = not penalized
+
+    // 2. Response Time — uses earliest time entry per ticket
+    // ≤30min = perfect, 0 at 2hrs, linear
     let responseScore = 0, avgResponseHrs = null;
     if (t.responseTimes.length >= 5) {
       avgResponseHrs = t.responseTimes.reduce((a, b) => a + b, 0) / t.responseTimes.length;
       const avgMins = avgResponseHrs * 60;
       const PERFECT_MINS = 30;
       const FAIL_MINS = 120;
-      responseScore = Math.max(0, Math.min(20, 20 * (1 - (avgMins - PERFECT_MINS) / (FAIL_MINS - PERFECT_MINS))));
+      responseScore = Math.max(0, Math.min(W.response,
+        W.response * (1 - (avgMins - PERFECT_MINS) / (FAIL_MINS - PERFECT_MINS))
+      ));
     }
 
-    // 3. Resolution Time (20pts)
+    // 3. Resolution Time — avg hours logged on completed tickets
     let resolutionScore = 0, avgHoursPerTicket = null;
     if (t.hoursPerCompletedTicket.length >= 5) {
       avgHoursPerTicket = t.hoursPerCompletedTicket.reduce((a, b) => a + b, 0) / t.hoursPerCompletedTicket.length;
-      const PERFECT_RESOLUTION = 0.5;
-      const STEP = 0.0833;
+      const PERFECT_RESOLUTION = 0.5; // 30 min
+      const STEP = 0.0833;            // 5 min
       const stepsOver = Math.max(0, (avgHoursPerTicket - PERFECT_RESOLUTION) / STEP);
-      resolutionScore = Math.max(0, 20 * (1 - stepsOver * 0.1));
+      resolutionScore = Math.max(0, W.resolution * (1 - stepsOver * 0.1));
     }
 
-    // 4. Escalation (15pts)
+    // 4. Escalation
     const escalationsOver = Math.max(0, t.escalatedCount - 5);
-    const escalationScore = Math.max(0, 15 * (1 - escalationsOver * 0.05));
+    const escalationScore = Math.max(0, W.escalation * (1 - escalationsOver * 0.05));
 
-    // 5. Notes Quality (15pts)
-    let notesScore = 0;
-    let notesPct = 0;
-    let notesMethod = 'entries';
+    // 5. Notes Quality — AI doc flags if available, else time entry coverage fallback
+    let notesScore = 0, notesPct = 0, notesMethod = 'entries';
     if (Object.keys(reviewedMeta).length > 0) {
       const reviewed = t.assignedTickets.filter(ticket => reviewedMeta[ticket.ticketNumber]);
-      const docFlagged = reviewed.filter(ticket => reviewedMeta[ticket.ticketNumber]?.flagType === 'documentation').length;
+      const docFlagged = reviewed.filter(ticket =>
+        reviewedMeta[ticket.ticketNumber]?.flagType === 'documentation'
+      ).length;
       if (reviewed.length > 0) {
         notesPct = (reviewed.length - docFlagged) / reviewed.length;
         notesMethod = 'ai';
@@ -592,20 +613,22 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
       ).length;
       notesPct = t.timeEntries.length > 0 ? entriesWithNotes / t.timeEntries.length : 0;
     }
-    notesScore = 15 * notesPct;
+    notesScore = W.notes * notesPct;
 
-    // 6. FCR (10pts)
+    // 6. FCR — T2/T3 skipped entirely
     let fcrScore = 0, fcrRate = null;
-    if (t.oneTouchEligible >= 10) {
+    if (!isTier2or3 && t.oneTouchEligible >= 10) {
       fcrRate = t.oneTouchCount / t.oneTouchEligible;
       const PERFECT_FCR = 0.9;
       const stepsUnder = Math.max(0, (PERFECT_FCR - fcrRate) / 0.05);
-      fcrScore = Math.max(0, 10 * (1 - stepsUnder * 0.1));
+      fcrScore = Math.max(0, W.fcr * (1 - stepsUnder * 0.1));
     }
 
-    const totalScore = Math.min(100, Math.round(slaScore + responseScore + resolutionScore + escalationScore + notesScore + fcrScore));
+    const totalScore = Math.min(100, Math.round(
+      slaScore + responseScore + resolutionScore + escalationScore + notesScore + fcrScore
+    ));
 
-    // Issue type outliers (1.25x team avg)
+    // Issue type outliers
     const issueOutliers = [];
     Object.entries(t.byIssueType).forEach(([issue, data]) => {
       const teamAvg = issueTypeTeamAvg[issue];
@@ -656,74 +679,69 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     return {
       id, name: t.name, score: totalScore,
       ticketCount: t.assignedTickets.length,
+      isTier2or3,
       metrics: {
         sla: {
-          score: Math.round(slaScore), maxScore: 20,
+          score: Math.round(slaScore), maxScore: W.sla,
           breaches: t.slaBreaches,
           eligible: t.slaEligible,
-          breachRate: t.slaEligible > 0 ? Math.round((t.slaBreaches / t.slaEligible) * 100) : 0
+          breachPct: parseFloat(slaBreachPct.toFixed(2))
         },
         responseTime: {
-          score: Math.round(responseScore), maxScore: 20,
+          score: Math.round(responseScore), maxScore: W.response,
           avgHrs: avgResponseHrs != null ? parseFloat(avgResponseHrs.toFixed(2)) : null,
           avgMins: avgResponseHrs != null ? Math.round(avgResponseHrs * 60) : null,
-          teamAvgMins: teamAvgResponseHrs != null ? Math.round(teamAvgResponseHrs * 60) : null
+          teamAvgMins: teamAvgResponseHrs != null ? Math.round(teamAvgResponseHrs * 60) : null,
+          sampleSize: t.responseTimes.length
         },
         resolutionTime: {
-          score: Math.round(resolutionScore), maxScore: 20,
+          score: Math.round(resolutionScore), maxScore: W.resolution,
           avgHrs: avgHoursPerTicket != null ? parseFloat(avgHoursPerTicket.toFixed(2)) : null,
           avgMins: avgHoursPerTicket != null ? Math.round(avgHoursPerTicket * 60) : null,
           teamAvgMins: teamAvgHoursPerTicket != null ? Math.round(teamAvgHoursPerTicket * 60) : null,
           completedTickets: t.hoursPerCompletedTicket.length
         },
         escalation: {
-          score: Math.round(escalationScore), maxScore: 15,
+          score: Math.round(escalationScore), maxScore: W.escalation,
           count: t.escalatedCount,
           totalTickets: t.assignedTickets.length
         },
         notes: {
-          score: Math.round(notesScore), maxScore: 15,
+          score: Math.round(notesScore), maxScore: W.notes,
           pct: Math.round(notesPct * 100),
           method: notesMethod
         },
         fcr: {
-          score: Math.round(fcrScore), maxScore: 10,
+          score: Math.round(fcrScore), maxScore: W.fcr,
           rate: fcrRate != null ? Math.round(fcrRate * 100) : null,
           oneTouchCount: t.oneTouchCount,
-          eligible: t.oneTouchEligible
+          eligible: t.oneTouchEligible,
+          notApplicable: isTier2or3
         }
       },
       issueOutliers
     };
   }).filter(Boolean).sort((a, b) => b.score - a.score);
 
-
   return {
-    // YTD
     ytd: {
       current: ytdCurrent, prior: ytdPrior, change: parseInt(ytdChange),
       currentLabel: `${ytdStartLabel} – ${ytdEndLabel}`,
       priorLabel: `${priorYtdStartLabel} – ${priorYtdEndLabel}`
     },
-    // Chart
     quarterlyTrend,
     selectedQLabel,
     selectedQTickets,
     selectedQTimeEntries,
-    // Tech data
     openByTechList,
     closedByTechList,
     avgOpenAge: parseFloat(avgOpenAge),
     avgResolutionDays: parseFloat(avgResolutionDays),
-    // SLA
     slaBreachRate,
     slaEligibleCount: slaEligible.length,
-    // Issue types
     byIssueType,
     byIssueTypeDetailed,
-    // Company breakdown (tickets)
     byCompanyList,
-    // Time analytics
     timeAnalytics: {
       totalHours,
       totalBillableHours,
@@ -735,7 +753,6 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
       hoursByCompanyList,
       entryCount: teSource.length
     },
-    // Staffing
     staffing: {
       trailing12: {
         current: trailing12Count,
