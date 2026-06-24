@@ -28,6 +28,99 @@ export function filterByDateRange(tickets, start, end, dateField = 'createDate')
   });
 }
 
+// ── Business hours calculator ─────────────────────────────────────────────────
+// Mon-Fri 8am-5pm Eastern Time, federal holidays excluded
+// Used for response time scoring — avoids penalizing techs for overnight/weekend wait
+
+function _getETOffset(utcMs) {
+  // Returns minutes ET is behind UTC (e.g. EDT=240, EST=300)
+  const d = new Date(utcMs);
+  const etHour = parseInt(d.toLocaleString('en-US', {
+    timeZone: 'America/New_York', hour: '2-digit', hour12: false
+  }));
+  const utcHour = d.getUTCHours();
+  let diff = utcHour - (etHour === 24 ? 0 : etHour);
+  if (diff < 0) diff += 24;
+  return diff * 60;
+}
+
+function _getFederalHolidays(year) {
+  const h = new Set();
+  function obs(y, m, d) {
+    const dt = new Date(y, m - 1, d);
+    const dow = dt.getDay();
+    if (dow === 6) dt.setDate(d - 1);
+    else if (dow === 0) dt.setDate(d + 1);
+    h.add(`${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`);
+  }
+  function nth(y, m, weekday, n) {
+    let count = 0;
+    for (let d = 1; d <= 31; d++) {
+      const dt = new Date(y, m - 1, d);
+      if (dt.getMonth() !== m - 1) break;
+      if (dt.getDay() === weekday && ++count === n) return d;
+    }
+    return 1;
+  }
+  function lastMon(y, m) {
+    let r = 1;
+    for (let d = 1; d <= 31; d++) {
+      const dt = new Date(y, m - 1, d);
+      if (dt.getMonth() !== m - 1) break;
+      if (dt.getDay() === 1) r = d;
+    }
+    return r;
+  }
+  obs(year, 1, 1); obs(year, 1, nth(year, 1, 1, 3)); obs(year, 2, nth(year, 2, 1, 3));
+  obs(year, 5, lastMon(year, 5)); obs(year, 6, 19); obs(year, 7, 4);
+  obs(year, 9, nth(year, 9, 1, 1)); obs(year, 10, nth(year, 10, 1, 2)); obs(year, 11, 11);
+  const tg = nth(year, 11, 4, 4);
+  h.add(`${year}-11-${tg}`); h.add(`${year}-11-${tg + 1}`);
+  obs(year, 12, 25);
+  return h;
+}
+
+const _bizHolCache = {};
+function _isHoliday(y, m, d) {
+  if (!_bizHolCache[y]) _bizHolCache[y] = _getFederalHolidays(y);
+  return _bizHolCache[y].has(`${y}-${m}-${d}`);
+}
+
+function businessMinutesBetween(startMs, endMs) {
+  if (endMs <= startMs) return 0;
+  const cap = Math.min(endMs, startMs + 21 * 24 * 60 * 60 * 1000);
+
+  let total = 0;
+  const startDate = new Date(startMs);
+  const etStartStr = startDate.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+  const [sm, sd, sy] = etStartStr.split('/').map(Number);
+  const curDate = new Date(sy, sm - 1, sd);
+
+  for (let i = 0; i < 22; i++) {
+    const y = curDate.getFullYear();
+    const m = curDate.getMonth() + 1;
+    const d = curDate.getDate();
+    const dow = curDate.getDay();
+
+    if (dow !== 0 && dow !== 6 && !_isHoliday(y, m, d)) {
+      const refMs = new Date(y, m - 1, d, 12, 0, 0).getTime();
+      const offsetMins = _getETOffset(refMs);
+      const bizStartUTC = new Date(y, m - 1, d, 8,  0, 0).getTime() + offsetMins * 60 * 1000;
+      const bizEndUTC   = new Date(y, m - 1, d, 17, 0, 0).getTime() + offsetMins * 60 * 1000;
+      const overlapStart = Math.max(startMs, bizStartUTC);
+      const overlapEnd   = Math.min(cap, bizEndUTC);
+      if (overlapEnd > overlapStart) {
+        total += (overlapEnd - overlapStart) / 60000;
+      }
+    }
+
+    curDate.setDate(curDate.getDate() + 1);
+    if (curDate.getTime() > cap) break;
+  }
+
+  return Math.round(total);
+}
+
 export function useTicketMetrics(rawData, selectedQuarterKey) {
   if (!rawData) return null;
 
@@ -414,20 +507,11 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     29682904: 3, 29682899: 3
   };
 
-  // Build ticket -> hours logged map AND earliest time entry per ticket
+  // Build ticket -> total hours logged map from time entries
   const ticketHoursMap = {};
-  const ticketFirstTouchMap = {}; // ticketID -> earliest dateWorked (ms)
   gradeTeSource.forEach(te => {
     if (!te.ticketID) return;
-    // Total hours logged
     ticketHoursMap[te.ticketID] = (ticketHoursMap[te.ticketID] || 0) + (te.hoursWorked || 0);
-    // Earliest touch per ticket
-    if (te.dateWorked) {
-      const ms = new Date(te.dateWorked).getTime();
-      if (!ticketFirstTouchMap[te.ticketID] || ms < ticketFirstTouchMap[te.ticketID]) {
-        ticketFirstTouchMap[te.ticketID] = ms;
-      }
-    }
   });
 
   // Build per-tech raw data
@@ -459,19 +543,24 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
 
     const issueLabel = issueTypeMap[String(t.issueType)] || null;
 
-    // Response time — use earliest time entry on this ticket, NOT firstResponseDateTime
-    // Exclude low priority, internal, NJC, and non-support queues
-    if (t.createDate && ticketFirstTouchMap[t.id] != null
+    // Response time — uses firstResponseDateTime (reliable in AutoTask)
+    // Business minutes only: Mon-Fri 8am-5pm ET, excluding federal holidays
+    // This removes overnight/weekend wait from the calculation
+    if (t.createDate && t.firstResponseDateTime
       && t.priority !== 4
       && !EXCLUDE_RESPONSE_COMPANIES.has(t.companyID)
       && !EXCLUDE_RESPONSE_QUEUES.has(t.queueID)) {
-      const hrs = (ticketFirstTouchMap[t.id] - new Date(t.createDate).getTime()) / (1000 * 60 * 60);
-      // Only count if response was within 24 hours (filters out tickets untouched for days)
-      if (hrs >= 0 && hrs < 24) {
-        tech.responseTimes.push(hrs);
+      const bizMins = businessMinutesBetween(
+        new Date(t.createDate).getTime(),
+        new Date(t.firstResponseDateTime).getTime()
+      );
+      // Only include if response happened within 15 business days (filters out abandoned tickets)
+      if (bizMins >= 0 && bizMins <= 15 * 9 * 60) {
+        const bizHrs = bizMins / 60;
+        tech.responseTimes.push(bizHrs);
         if (issueLabel) {
           if (!tech.byIssueType[issueLabel]) tech.byIssueType[issueLabel] = { responseTimes: [], hoursLogged: [], escalations: 0, tickets: 0 };
-          tech.byIssueType[issueLabel].responseTimes.push(hrs);
+          tech.byIssueType[issueLabel].responseTimes.push(bizHrs);
           tech.byIssueType[issueLabel].tickets++;
         }
       }
