@@ -6,6 +6,7 @@ const TABS = [
   { id: 'Staffing signals', label: 'Staffing signals' },
   { id: 'AI Review',        label: 'AI Review', isAI: true },
   { id: 'Action Items',     label: 'Action Items', isAction: true },
+  { id: 'Inside Sales',     label: 'Inside Sales' },
   { id: 'VTO',              label: 'VTO', isOwnerOnly: true },
 ];
 
