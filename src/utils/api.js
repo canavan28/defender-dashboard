@@ -97,6 +97,10 @@ export function createApi(getToken) {
       update:   (id, path, value)   => apiPatch(`/api/vto/${id}`, { path, value }, getToken),
       finalize: (id, authoredBy)    => apiPost(`/api/vto/${id}/finalize`, { authoredBy }, getToken),
       unlock:   (id)                => apiPost(`/api/vto/${id}/unlock`, {}, getToken)
+    },
+    upsells: {
+      all:     () => apiFetch('/api/upsells/all', getToken),
+      refresh: () => apiFetchLongRunning('/api/upsells/refresh', getToken)
     }
   };
 }
