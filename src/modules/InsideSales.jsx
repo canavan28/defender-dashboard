@@ -1,10 +1,5 @@
 import { useMemo, useState } from 'react';
 
-// Reuses the same brand hex values already established for VTO (blue/green/
-// warm accent) for visual consistency across the app, since there isn't yet
-// a dedicated status-color set in the shared CSS variables. All status
-// colors are centralized here - change in one place if you want different
-// colors later.
 const STATUS_META = {
   active:               { label: 'Active',                   bg: '#e9f5ee', fg: '#3f9469' },
   included:             { label: 'Included',                 bg: '#eaf2fb', fg: '#2f74b5' },
@@ -16,8 +11,8 @@ const STATUS_META = {
 };
 
 const UPSELL_ORDER = [
-  'managedFirewall', 'backupDatto', 'backupNas', 'mdm',
-  'accountCompromiseProtection', 'vigilance', 'vPenTest', 'passwordManager'
+  'accountCompromiseProtection', 'vigilance', 'vPenTest',
+  'managedFirewall', 'backupDatto', 'backupNas', 'mdm', 'passwordManager'
 ];
 
 function StatusBadge({ upsell }) {
@@ -145,7 +140,6 @@ export function InsideSales({ upsells }) {
         </div>
       )}
 
-      {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         <div className="it-card" style={{ padding: 16 }}>
           <p className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginBottom: 4 }}>ACTIVE UPSELL MRR</p>
@@ -167,7 +161,6 @@ export function InsideSales({ upsells }) {
         </div>
       </div>
 
-      {/* Needs Review panel */}
       {summary.needsReview.length > 0 && (
         <div className="it-card" style={{ padding: 16, marginBottom: 20 }}>
           <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 10 }}>
@@ -206,18 +199,23 @@ export function InsideSales({ upsells }) {
         }}
       />
 
-      <div className="it-card" style={{ overflowX: 'auto', padding: 0 }}>
+      <div className="it-card" style={{ overflow: 'auto', padding: 0, maxHeight: '70vh' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+            <tr>
               <th style={{
-                position: 'sticky', left: 0, background: 'var(--card)',
+                position: 'sticky', top: 0, left: 0, zIndex: 3,
+                background: 'var(--card)', borderBottom: '1px solid var(--border)',
                 textAlign: 'left', padding: '10px 14px', color: 'var(--ink3)', fontWeight: 500
               }}>
                 Company
               </th>
               {UPSELL_ORDER.map(key => (
-                <th key={key} style={{ textAlign: 'left', padding: '10px 14px', color: 'var(--ink3)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                <th key={key} style={{
+                  position: 'sticky', top: 0, zIndex: 2,
+                  background: 'var(--card)', borderBottom: '1px solid var(--border)',
+                  textAlign: 'left', padding: '10px 14px', color: 'var(--ink3)', fontWeight: 500, whiteSpace: 'nowrap'
+                }}>
                   {companies.find(c => c.upsells?.[key])?.upsells[key]?.label || key}
                 </th>
               ))}
@@ -227,7 +225,7 @@ export function InsideSales({ upsells }) {
             {filtered.map(company => (
               <tr key={company.companyId} style={{ borderBottom: '1px solid var(--border)' }}>
                 <td style={{
-                  position: 'sticky', left: 0, background: 'var(--card)',
+                  position: 'sticky', left: 0, zIndex: 1, background: 'var(--card)',
                   padding: '10px 14px', fontWeight: 500, color: 'var(--ink)', whiteSpace: 'nowrap'
                 }}>
                   {company.companyName}
