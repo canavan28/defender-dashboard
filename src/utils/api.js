@@ -39,6 +39,24 @@ async function apiPost(path, body, getToken) {
   return res.json();
 }
 
+// Mirrors apiPost, but with keepalive for long-running backend jobs
+// (e.g. /api/customer-success/sync, which pages through AutoTask
+// Tickets + SurveyResults sequentially and can take a while).
+async function apiPostLongRunning(path, body, getToken) {
+  const token = await getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    keepalive: true,
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 async function apiPatch(path, body, getToken) {
   const token = await getToken();
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -101,6 +119,13 @@ export function createApi(getToken) {
     upsells: {
       all:     () => apiFetch('/api/upsells/all', getToken),
       refresh: () => apiFetchLongRunning('/api/upsells/refresh', getToken)
+    },
+    customerSuccess: {
+      scores:      ()                                            => apiFetch('/api/customer-success/scores', getToken),
+      get:         (companyId)                                   => apiFetch(`/api/customer-success/scores/${companyId}`, getToken),
+      addEvent:    (companyId, type, delta, note, companyName)    => apiPost(`/api/customer-success/scores/${companyId}/events`, { type, delta, note, companyName }, getToken),
+      deleteEvent: (companyId, eventId)                          => apiDelete(`/api/customer-success/scores/${companyId}/events/${eventId}`, getToken),
+      sync:        ()                                            => apiPostLongRunning('/api/customer-success/sync', {}, getToken)
     }
   };
 }

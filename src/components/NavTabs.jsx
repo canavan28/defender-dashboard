@@ -1,13 +1,14 @@
 const TABS = [
-  { id: 'Ticket overview',  label: 'Ticket overview' },
-  { id: 'Tech capacity',    label: 'Tech capacity' },
-  { id: 'Time analytics',   label: 'Time analytics' },
-  { id: 'SLA health',       label: 'SLA health' },
-  { id: 'Staffing signals', label: 'Staffing signals' },
-  { id: 'AI Review',        label: 'AI Review', isAI: true },
-  { id: 'Action Items',     label: 'Action Items', isAction: true },
-  { id: 'Inside Sales',     label: 'Inside Sales' },
-  { id: 'VTO',              label: 'VTO', isOwnerOnly: true },
+  { id: 'Ticket overview',   label: 'Ticket overview' },
+  { id: 'Tech capacity',     label: 'Tech capacity' },
+  { id: 'Time analytics',    label: 'Time analytics' },
+  { id: 'SLA health',        label: 'SLA health' },
+  { id: 'Staffing signals',  label: 'Staffing signals' },
+  { id: 'AI Review',         label: 'AI Review', isAI: true },
+  { id: 'Action Items',      label: 'Action Items', isAction: true },
+  { id: 'Inside Sales',      label: 'Inside Sales' },
+  { id: 'Customer Success',  label: 'Customer Success' },
+  { id: 'VTO',               label: 'VTO', isOwnerOnly: true },
 ];
 
 export function NavTabs({ active, onChange, aiUnactionedCount = 0, actionItemsCount = 0, isOwner = false }) {

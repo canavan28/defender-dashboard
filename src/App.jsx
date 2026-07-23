@@ -10,11 +10,13 @@ import { AIReview } from './modules/AIReview';
 import { ActionItems } from './modules/ActionItems';
 import { VTOTab } from './modules/VTO';
 import { InsideSales } from './modules/InsideSales';
+import { CustomerSuccess } from './modules/CustomerSuccess';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
 import { useAuth } from './hooks/useAuth';
 import { useAIReview } from './hooks/useAIReview';
 import { useUpsells } from './hooks/useUpsells';
+import { useCustomerSuccess } from './hooks/useCustomerSuccess';
 import { createApi } from './utils/api';
 
 export default function App() {
@@ -30,6 +32,7 @@ export default function App() {
   const metrics = useTicketMetrics(rawData, selectedQuarterKey);
   const aiReview = useAIReview(api);
   const upsells = useUpsells(api);
+  const cs = useCustomerSuccess(getToken);
   const [activeTab, setActiveTab] = useState('Ticket overview');
   const [aiFilter, setAiFilter] = useState(null);
 
@@ -198,6 +201,10 @@ export default function App() {
 
         {activeTab === 'Inside Sales' && (
           <InsideSales upsells={upsells} />
+        )}
+
+        {activeTab === 'Customer Success' && (
+          <CustomerSuccess cs={cs} />
         )}
 
         {activeTab === 'VTO' && isOwner && (
