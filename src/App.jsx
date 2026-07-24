@@ -204,7 +204,7 @@ export default function App() {
         )}
 
         {activeTab === 'Customer Success' && (
-          <CustomerSuccess cs={cs} />
+          <CustomerSuccess cs={cs} companyMap={rawData?.companyMap} />
         )}
 
         {activeTab === 'VTO' && isOwner && (

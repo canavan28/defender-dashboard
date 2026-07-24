@@ -28,11 +28,18 @@ function formatEventLabel(evt) {
   return opt ? opt.label : evt.type;
 }
 
-export function CustomerSuccess({ cs }) {
+export function CustomerSuccess({ cs, companyMap = {} }) {
   const {
     scores, client, loading, saving, syncing, syncErrors, error,
     loadScores, openClient, closeClient, addEvent, deleteEvent, runSync
   } = cs;
+
+  // Prefer the shared companyMap (same source SLA Health/Ticket Overview use)
+  // over whatever companyName happens to be stored on the score record —
+  // AM-entered companyName is really just a fallback for clients the map
+  // doesn't cover yet.
+  const resolveName = (companyId, fallbackName) =>
+    companyMap[String(companyId)] || fallbackName || `Company #${companyId}`;
 
   const [selectedId, setSelectedId] = useState(null);
   const [companyNameDraft, setCompanyNameDraft] = useState('');
@@ -44,7 +51,7 @@ export function CustomerSuccess({ cs }) {
   useEffect(() => { loadScores(); }, []);
 
   useEffect(() => {
-    if (client) setCompanyNameDraft(client.companyName || '');
+    if (client) setCompanyNameDraft(resolveName(client.companyId, client.companyName));
   }, [client?.companyId]);
 
   const sortedScores = [...scores].sort((a, b) => a.score - b.score);
@@ -125,6 +132,9 @@ export function CustomerSuccess({ cs }) {
           {syncErrors.map((e, i) => (
             <p key={i} className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>
               {e.step}: {e.message}
+              {e.status ? ` (status ${e.status})` : ''}
+              {e.url ? ` — ${e.method?.toUpperCase() || ''} ${e.url}` : ''}
+              {e.data ? ` — ${typeof e.data === 'string' ? e.data : JSON.stringify(e.data)}` : ''}
             </p>
           ))}
         </div>
@@ -177,7 +187,7 @@ export function CustomerSuccess({ cs }) {
                 }}
               >
                 <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>
-                  {c.companyName || `Company #${c.companyId}`}
+                  {resolveName(c.companyId, c.companyName)}
                 </span>
                 <span className="it-mono" style={{ fontSize: 13, fontWeight: 600, color: scoreColor(c.score) }}>
                   {c.score}
@@ -192,7 +202,7 @@ export function CustomerSuccess({ cs }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <div>
                 <div className="it-section-title">
-                  {client?.companyName || `Company #${selectedId}`}
+                  {resolveName(selectedId, client?.companyName)}
                 </div>
                 <div className="it-section-sub">
                   Score: <span style={{ color: client ? scoreColor(client.score) : 'var(--ink3)', fontWeight: 600 }}>
