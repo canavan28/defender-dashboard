@@ -47,6 +47,8 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
   const [formDelta, setFormDelta] = useState(EVENT_TYPE_OPTIONS[0].defaultDelta);
   const [formNote, setFormNote] = useState('');
   const [formErr, setFormErr] = useState(null);
+  const [sortField, setSortField] = useState('score');   // 'score' | 'name'
+  const [sortDir, setSortDir] = useState('asc');         // 'asc' | 'desc'
 
   useEffect(() => { loadScores(); }, []);
 
@@ -54,7 +56,26 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
     if (client) setCompanyNameDraft(resolveName(client.companyId, client.companyName));
   }, [client?.companyId]);
 
-  const sortedScores = [...scores].sort((a, b) => a.score - b.score);
+  const sortedScores = [...scores].sort((a, b) => {
+    let cmp;
+    if (sortField === 'name') {
+      cmp = resolveName(a.companyId, a.companyName).localeCompare(resolveName(b.companyId, b.companyName));
+    } else {
+      cmp = a.score - b.score;
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const toggleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir(field === 'score' ? 'asc' : 'asc');
+    }
+  };
+
+  const sortArrow = (field) => sortField === field ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
   const belowThreshold = scores.filter(c => c.score < CS_SCORE_THRESHOLD).length;
   const avgScore = scores.length
     ? (scores.reduce((s, c) => s + c.score, 0) / scores.length).toFixed(1)
@@ -133,6 +154,7 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
             <p key={i} className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>
               {e.step}: {e.message}
               {e.status ? ` (status ${e.status})` : ''}
+              {e.since ? ` — window since ${new Date(e.since).toLocaleDateString()}` : ''}
               {e.url ? ` — ${e.method?.toUpperCase() || ''} ${e.url}` : ''}
               {e.data ? ` — ${typeof e.data === 'string' ? e.data : JSON.stringify(e.data)}` : ''}
             </p>
@@ -172,6 +194,27 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
             <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>
               No score data yet — run a sync to pull in SLA breaches and AutoTask surveys.
             </p>
+          )}
+          {sortedScores.length > 0 && (
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              padding: '0 12px 6px', borderBottom: '1px solid var(--border)', marginBottom: 4
+            }}>
+              <button
+                onClick={() => toggleSort('name')}
+                className="it-mono"
+                style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 11, color: 'var(--ink4)', padding: 0 }}
+              >
+                CLIENT{sortArrow('name')}
+              </button>
+              <button
+                onClick={() => toggleSort('score')}
+                className="it-mono"
+                style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 11, color: 'var(--ink4)', padding: 0 }}
+              >
+                SCORE{sortArrow('score')}
+              </button>
+            </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sortedScores.map(c => (
