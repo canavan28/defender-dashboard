@@ -301,6 +301,11 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
                             {evt.delta > 0 ? '+' : ''}{evt.delta}
                           </span>
                         </div>
+                        {evt.source?.ticketNumber && (
+                          <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>
+                            Ticket #{evt.source.ticketNumber}
+                          </div>
+                        )}
                         {evt.note && (
                           <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)', marginTop: 2 }}>
                             {evt.note}
