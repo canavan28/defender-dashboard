@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MetricCard } from '../components/MetricCard';
 
 // Minimal CSV parser handling quoted fields with embedded commas. No new
-// npm dependency needed for a format this simple — confirmed against both
-// the Datto RMM and SentinelOne exports.
+// npm dependency needed for a format this simple.
 function parseCSV(text) {
   const rows = [];
   let row = [];
@@ -48,20 +47,18 @@ function parseCSV(text) {
   });
 }
 
-// Per-source config: how to extract { name, devices, ...extra } rows from
-// that vendor's specific CSV column layout, plus display labels.
+// Per-source config: column layout, what it compares against, and how to
+// extract { name, devices, ...extra } rows from that vendor's CSV.
 const SOURCES = {
   datto_rmm: {
     label: 'Datto RMM',
+    shortLabel: 'RMM',
     deviceLabel: 'Devices',
     contractedField: 'totalContractedDevices',
-    contractedLabel: 'CONTRACTED DEVICES',
+    contractedLabel: 'Contracted devices',
     extractRows: (parsed) => parsed
       .filter((row) => row['Type'] === 'Managed')
       .map((row) => ({
-        // Prefer the pre-existing PSA Company Name link (confirmed to
-        // exact-match AutoTask names) — fall back to the raw site Name if
-        // blank, which will usually end up unmatched and need reconciliation.
         name: (row['PSA Company Name'] || row['Name'] || '').trim(),
         devices: parseInt(row['Devices'], 10) || 0,
       }))
@@ -69,9 +66,10 @@ const SOURCES = {
   },
   sentinelone: {
     label: 'SentinelOne',
+    shortLabel: 'S1',
     deviceLabel: 'Active Agents',
     contractedField: 'totalContractedDevices',
-    contractedLabel: 'CONTRACTED DEVICES',
+    contractedLabel: 'Contracted devices',
     extractRows: (parsed) => parsed
       .filter((row) => row['Type'] === 'Paid' && row['Status'] === 'Active')
       .map((row) => ({
@@ -83,21 +81,34 @@ const SOURCES = {
   },
   saas_protect: {
     label: 'SaaS Protect',
+    shortLabel: 'SaaS Protect',
     deviceLabel: 'Current Usage',
-    contractedField: 'totalContractedUsers', // user-based, not device-based
-    contractedLabel: 'CONTRACTED USERS',
+    contractedField: 'totalContractedUsers',
+    contractedLabel: 'Contracted users',
     extractRows: (parsed) => parsed
       .map((row) => ({
         name: (row['Client Name'] || '').trim(),
         devices: parseInt(row['Current Usage'], 10) || 0,
-        // Archived Seats compares against a DIFFERENT contracted add-on
-        // ("Long Term Account Archive") — carried through as its own field,
-        // not folded into the main users comparison.
         archivedSeats: parseInt(row['Archived Seats'], 10) || 0,
       }))
       .filter((r) => r.name),
   },
 };
+
+const SOURCE_KEYS = Object.keys(SOURCES);
+
+function DiscrepancyCell({ consumedValue, contractedValue }) {
+  if (consumedValue == null) {
+    return <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>—</span>;
+  }
+  const diff = consumedValue - contractedValue;
+  const color = diff > 0 ? 'var(--red)' : diff < 0 ? 'var(--amber)' : 'var(--ink3)';
+  return (
+    <span className="it-mono" style={{ fontSize: 12, color, fontWeight: diff !== 0 ? 600 : 400 }}>
+      {consumedValue}{diff !== 0 && ` (${diff > 0 ? '+' : ''}${diff})`}
+    </span>
+  );
+}
 
 export function LicenseAudit({ licenseAudit }) {
   const {
@@ -106,116 +117,86 @@ export function LicenseAudit({ licenseAudit }) {
     uploadConsumed, mapConsumed, ignoreConsumed
   } = licenseAudit;
 
-  const [source, setSource] = useState('datto_rmm');
+  const [uploadSource, setUploadSource] = useState('datto_rmm');
   const [uploadSummary, setUploadSummary] = useState(null);
   const [mappingChoice, setMappingChoice] = useState({});
-
-  const config = SOURCES[source];
+  const [showReconcile, setShowReconcile] = useState(false);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
   useEffect(() => {
     loadContracted();
     loadCompanies();
+    SOURCE_KEYS.forEach((key) => loadConsumed(key));
   }, []);
-
-  useEffect(() => {
-    loadConsumed(source);
-    setUploadSummary(null);
-  }, [source]);
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const text = await file.text();
     const parsed = parseCSV(text);
-    const rows = config.extractRows(parsed);
-    const result = await uploadConsumed(source, rows);
+    const rows = SOURCES[uploadSource].extractRows(parsed);
+    const result = await uploadConsumed(uploadSource, rows);
     setUploadSummary(result);
+    setShowReconcile(true);
     e.target.value = '';
   };
-
-  const sourceData = consumed[source] || { byCompany: {}, unmatched: [], uploadedAt: null };
 
   const handleMap = async (rawName) => {
     const companyId = mappingChoice[rawName];
     if (!companyId) return;
-    await mapConsumed(source, rawName, companyId);
+    await mapConsumed(uploadSource, rawName, companyId);
   };
 
   const clients = contracted?.clients ? Object.values(contracted.clients) : [];
 
-  const comparisonRows = clients.map((c) => {
-    const consumedEntry = sourceData.byCompany[String(c.companyId)];
-    const consumedDevices = consumedEntry ? consumedEntry.devices : null;
-    const contractedValue = c[config.contractedField];
-    const discrepancy = consumedDevices != null ? consumedDevices - contractedValue : null;
-    return { ...c, contractedValue, consumedDevices, discrepancy };
-  }).sort((a, b) => {
-    if (a.discrepancy == null && b.discrepancy == null) return 0;
-    if (a.discrepancy == null) return 1;
-    if (b.discrepancy == null) return -1;
-    return b.discrepancy - a.discrepancy;
-  });
+  // One row per client, with every source's consumed value + discrepancy
+  // pre-computed, plus the Vigilance and Long Term Archive comparisons.
+  const tableRows = useMemo(() => {
+    return clients.map((c) => {
+      const perSource = {};
+      SOURCE_KEYS.forEach((key) => {
+        const entry = consumed[key]?.byCompany?.[String(c.companyId)];
+        const contractedValue = c[SOURCES[key].contractedField];
+        perSource[key] = {
+          consumedValue: entry ? entry.devices : null,
+          contractedValue,
+          discrepancy: entry ? entry.devices - contractedValue : null,
+        };
+      });
 
-  const overageCount = comparisonRows.filter((r) => r.discrepancy != null && r.discrepancy !== 0).length;
+      const s1Entry = consumed.sentinelone?.byCompany?.[String(c.companyId)];
+      const hasConsumedVigilance = s1Entry ? !!s1Entry.vigilance : null;
+      const hasContractedVigilance = c.addons?.vigilance?.status !== 'not_present';
+      const vigilanceMismatch = hasConsumedVigilance != null && hasConsumedVigilance !== hasContractedVigilance;
 
-  // Vigilance: consumed (SentinelOne's Vigilance MDR add-on flag) vs.
-  // contracted (already resolved in the license audit's addons.vigilance).
-  // Only meaningful once SentinelOne data has been uploaded.
-  const vigilanceRows = source === 'sentinelone'
-    ? clients.map((c) => {
-        const consumedEntry = sourceData.byCompany[String(c.companyId)];
-        const hasConsumedVigilance = consumedEntry ? !!consumedEntry.vigilance : null;
-        const hasContractedVigilance = c.addons?.vigilance?.status !== 'not_present';
-        const mismatch = hasConsumedVigilance != null && hasConsumedVigilance !== hasContractedVigilance;
-        return { ...c, hasConsumedVigilance, hasContractedVigilance, mismatch };
-      }).filter((r) => r.hasConsumedVigilance != null)
-        .sort((a, b) => (b.mismatch ? 1 : 0) - (a.mismatch ? 1 : 0))
-    : [];
+      const saasEntry = consumed.saas_protect?.byCompany?.[String(c.companyId)];
+      const archivedSeats = saasEntry ? (saasEntry.archivedSeats || 0) : null;
+      const contractedArchive = c.addons?.longTermArchive?.units || 0;
+      const archiveOverage = archivedSeats != null ? archivedSeats - contractedArchive : null;
 
-  const vigilanceMismatchCount = vigilanceRows.filter((r) => r.mismatch).length;
+      const anyDiscrepancy = SOURCE_KEYS.some((key) => perSource[key].discrepancy)
+        || vigilanceMismatch || (archiveOverage != null && archiveOverage > 0);
 
-  // Long Term Account Archive: consumed (SaaS Protect's Archived Seats) vs.
-  // contracted (addons.longTermArchive). Matt's hypothesis: most archived
-  // accounts aren't actually being billed for this — expect real overages
-  // here, not just noise.
-  const archiveRows = source === 'saas_protect'
-    ? clients.map((c) => {
-        const consumedEntry = sourceData.byCompany[String(c.companyId)];
-        const archivedSeats = consumedEntry ? (consumedEntry.archivedSeats || 0) : null;
-        const contractedArchive = c.addons?.longTermArchive?.units || 0;
-        const discrepancy = archivedSeats != null ? archivedSeats - contractedArchive : null;
-        return { ...c, archivedSeats, contractedArchive, discrepancy };
-      }).filter((r) => r.archivedSeats != null && r.archivedSeats > 0)
-        .sort((a, b) => (b.discrepancy || 0) - (a.discrepancy || 0))
-    : [];
+      return { ...c, perSource, hasConsumedVigilance, hasContractedVigilance, vigilanceMismatch, archivedSeats, contractedArchive, archiveOverage, anyDiscrepancy };
+    }).sort((a, b) => (b.anyDiscrepancy ? 1 : 0) - (a.anyDiscrepancy ? 1 : 0));
+  }, [clients, consumed]);
 
-  const archiveOverageCount = archiveRows.filter((r) => r.discrepancy > 0).length;
+  // Overview counts, one per software type, for the top cards.
+  const overageCounts = SOURCE_KEYS.reduce((acc, key) => {
+    acc[key] = tableRows.filter((r) => r.perSource[key].discrepancy).length;
+    return acc;
+  }, {});
+  const vigilanceMismatchCount = tableRows.filter((r) => r.vigilanceMismatch).length;
+  const archiveOverageCount = tableRows.filter((r) => r.archiveOverage > 0).length;
+
+  const sourceData = consumed[uploadSource] || { byCompany: {}, unmatched: [], uploadedAt: null };
+  const selected = tableRows.find((r) => r.companyId === selectedCompanyId);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div className="it-section-title">License Audit</div>
-          <div className="it-section-sub">Contracted vs. consumed devices</div>
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <select
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: 12.5, fontFamily: 'inherit' }}
-          >
-            {Object.entries(SOURCES).map(([key, s]) => (
-              <option key={key} value={key}>{s.label}</option>
-            ))}
-          </select>
-          <label className="it-mono" style={{
-            padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-strong)',
-            background: uploading ? 'var(--slate-soft)' : 'white', cursor: uploading ? 'default' : 'pointer', fontSize: 12.5
-          }}>
-            {uploading ? 'Uploading…' : `Upload ${config.label} CSV`}
-            <input type="file" accept=".csv" onChange={handleFile} disabled={uploading} style={{ display: 'none' }} />
-          </label>
-        </div>
+      <div>
+        <div className="it-section-title">License Audit</div>
+        <div className="it-section-sub">Contracted vs. consumed, across every tracked software source</div>
       </div>
 
       {error && (
@@ -224,30 +205,72 @@ export function LicenseAudit({ licenseAudit }) {
         </div>
       )}
 
+      {/* Overview cards — one per software type */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+        {SOURCE_KEYS.map((key) => (
+          <MetricCard key={key}
+            eyebrow={SOURCES[key].shortLabel}
+            value={overageCounts[key]}
+            foot={overageCounts[key] > 0 ? 'Discrepancies' : 'All aligned'}
+            footTone={overageCounts[key] > 0 ? 'neg' : 'pos'} />
+        ))}
+        <MetricCard eyebrow="Vigilance"
+          value={vigilanceMismatchCount}
+          foot={vigilanceMismatchCount > 0 ? 'Mismatched' : 'All aligned'}
+          footTone={vigilanceMismatchCount > 0 ? 'neg' : 'pos'} />
+        <MetricCard eyebrow="Archive"
+          value={archiveOverageCount}
+          foot={archiveOverageCount > 0 ? 'Likely unbilled' : 'All aligned'}
+          footTone={archiveOverageCount > 0 ? 'neg' : 'pos'} />
+      </div>
+
+      {/* Upload toolbar — compact, secondary to the overview */}
+      <div className="it-card" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <select
+            value={uploadSource}
+            onChange={(e) => { setUploadSource(e.target.value); setUploadSummary(null); }}
+            style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: 12.5, fontFamily: 'inherit' }}
+          >
+            {SOURCE_KEYS.map((key) => (
+              <option key={key} value={key}>{SOURCES[key].label}</option>
+            ))}
+          </select>
+          <label className="it-mono" style={{
+            padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-strong)',
+            background: uploading ? 'var(--slate-soft)' : 'white', cursor: uploading ? 'default' : 'pointer', fontSize: 12.5
+          }}>
+            {uploading ? 'Uploading…' : `Upload ${SOURCES[uploadSource].label} CSV`}
+            <input type="file" accept=".csv" onChange={handleFile} disabled={uploading} style={{ display: 'none' }} />
+          </label>
+          {sourceData.unmatched.length > 0 && (
+            <button
+              onClick={() => setShowReconcile((v) => !v)}
+              className="it-mono"
+              style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-strong)', background: 'white', fontSize: 12.5, cursor: 'pointer' }}
+            >
+              {sourceData.unmatched.length} need reconciliation {showReconcile ? '▲' : '▼'}
+            </button>
+          )}
+        </div>
+        {sourceData.uploadedAt && (
+          <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>
+            Last upload: {new Date(sourceData.uploadedAt).toLocaleString()}
+          </span>
+        )}
+      </div>
+
       {uploadSummary && (
         <div style={{ background: 'var(--green-soft)', border: '1px solid #bbf7d0', borderRadius: 10, padding: 16 }}>
           <p style={{ fontSize: 13, color: 'var(--green)' }}>
-            Upload complete — {uploadSummary.matchedCount} sites matched, {uploadSummary.unmatchedCount} need reconciliation below.
+            Upload complete — {uploadSummary.matchedCount} sites matched, {uploadSummary.unmatchedCount} need reconciliation.
           </p>
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
-        <MetricCard eyebrow="Clients with a discrepancy"
-          value={overageCount}
-          foot={overageCount > 0 ? 'Consumed ≠ contracted' : 'All matched clients aligned'}
-          footTone={overageCount > 0 ? 'neg' : 'pos'} />
-        <MetricCard eyebrow="Sites needing reconciliation"
-          value={sourceData.unmatched.length}
-          foot="No automatic name match" />
-        <MetricCard eyebrow="Last upload"
-          value={sourceData.uploadedAt ? new Date(sourceData.uploadedAt).toLocaleDateString() : '—'}
-          foot={sourceData.uploadedAt ? new Date(sourceData.uploadedAt).toLocaleTimeString() : 'No upload yet'} />
-      </div>
-
-      {sourceData.unmatched.length > 0 && (
+      {showReconcile && sourceData.unmatched.length > 0 && (
         <div className="it-card" style={{ padding: 20 }}>
-          <div className="it-section-title" style={{ marginBottom: 12 }}>Needs reconciliation</div>
+          <div className="it-section-title" style={{ marginBottom: 12 }}>Needs reconciliation — {SOURCES[uploadSource].label}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {sourceData.unmatched.map((u) => (
               <div key={u.rawName} style={{
@@ -255,7 +278,7 @@ export function LicenseAudit({ licenseAudit }) {
                 gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)'
               }}>
                 <span style={{ fontSize: 13 }}>{u.rawName}</span>
-                <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>{u.devices} {config.deviceLabel.toLowerCase()}</span>
+                <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>{u.devices}</span>
                 <select
                   value={mappingChoice[u.rawName] || ''}
                   onChange={(e) => setMappingChoice((prev) => ({ ...prev, [u.rawName]: e.target.value }))}
@@ -275,7 +298,7 @@ export function LicenseAudit({ licenseAudit }) {
                   Map
                 </button>
                 <button
-                  onClick={() => ignoreConsumed(source, u.rawName)}
+                  onClick={() => ignoreConsumed(uploadSource, u.rawName)}
                   className="it-mono"
                   style={{ padding: '6px 12px', borderRadius: 6, border: 0, background: 'none', color: 'var(--ink4)', fontSize: 12, cursor: 'pointer' }}
                 >
@@ -287,122 +310,161 @@ export function LicenseAudit({ licenseAudit }) {
         </div>
       )}
 
-      <div className="it-card" style={{ padding: 20 }}>
-        <div className="it-section-title" style={{ marginBottom: 12 }}>Contracted vs. consumed ({config.deviceLabel.toLowerCase()})</div>
+      {/* Unified spreadsheet — every client, every source, one table */}
+      <div className="it-card" style={{ padding: 20, overflowX: 'auto' }}>
+        <div className="it-section-title" style={{ marginBottom: 12 }}>All clients</div>
         {loading && <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>Loading…</p>}
-        {!loading && comparisonRows.length === 0 && (
+        {!loading && tableRows.length === 0 && (
           <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>No contracted data yet.</p>
         )}
-        {comparisonRows.length > 0 && (
-          <div style={{
-            display: 'grid', gridTemplateColumns: '2fr 100px 100px 100px',
-            gap: 10, padding: '0 12px 6px', borderBottom: '1px solid var(--border)', marginBottom: 4
-          }}>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>CLIENT</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>{config.contractedLabel}</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>{config.deviceLabel.toUpperCase()}</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>DIFF</span>
-          </div>
+        {tableRows.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                <th style={{ textAlign: 'left', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>CLIENT</th>
+                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>USERS</th>
+                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>DEVICES</th>
+                {SOURCE_KEYS.map((key) => (
+                  <th key={key} style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>
+                    {SOURCES[key].shortLabel.toUpperCase()}
+                  </th>
+                ))}
+                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>VIGILANCE</th>
+                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>ARCHIVE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((row) => (
+                <tr
+                  key={row.companyId}
+                  onClick={() => setSelectedCompanyId(row.companyId)}
+                  style={{
+                    cursor: 'pointer',
+                    background: row.anyDiscrepancy ? 'var(--red-soft)' : 'transparent',
+                    borderBottom: '1px solid var(--border)'
+                  }}
+                >
+                  <td style={{ padding: '10px 12px', fontSize: 13 }}>{row.companyName}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right' }} className="it-mono">{row.totalContractedUsers}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right' }} className="it-mono">{row.totalContractedDevices}</td>
+                  {SOURCE_KEYS.map((key) => (
+                    <td key={key} style={{ padding: '10px 12px', textAlign: 'right' }}>
+                      <DiscrepancyCell consumedValue={row.perSource[key].consumedValue} contractedValue={row.perSource[key].contractedValue} />
+                    </td>
+                  ))}
+                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                    {row.hasConsumedVigilance == null ? (
+                      <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>—</span>
+                    ) : (
+                      <span className="it-mono" style={{ fontSize: 12, color: row.vigilanceMismatch ? 'var(--red)' : 'var(--green)', fontWeight: row.vigilanceMismatch ? 600 : 400 }}>
+                        {row.vigilanceMismatch ? 'Mismatch' : 'Aligned'}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                    {row.archivedSeats == null ? (
+                      <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>—</span>
+                    ) : (
+                      <span className="it-mono" style={{ fontSize: 12, color: row.archiveOverage > 0 ? 'var(--red)' : 'var(--ink3)', fontWeight: row.archiveOverage > 0 ? 600 : 400 }}>
+                        {row.archivedSeats}{row.archiveOverage > 0 && ` (+${row.archiveOverage})`}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {comparisonRows.map((row) => (
-            <div key={row.companyId} style={{
-              display: 'grid', gridTemplateColumns: '2fr 100px 100px 100px',
-              gap: 10, alignItems: 'center', padding: '8px 12px',
-              background: row.discrepancy ? 'var(--red-soft)' : 'transparent', borderRadius: 6
-            }}>
-              <span style={{ fontSize: 13 }}>{row.companyName}</span>
-              <span className="it-mono" style={{ fontSize: 12, textAlign: 'right' }}>{row.contractedValue}</span>
-              <span className="it-mono" style={{ fontSize: 12, textAlign: 'right', color: 'var(--ink3)' }}>
-                {row.consumedDevices != null ? row.consumedDevices : '—'}
-              </span>
-              <span className="it-mono" style={{
-                fontSize: 12, textAlign: 'right', fontWeight: 600,
-                color: row.discrepancy > 0 ? 'var(--red)' : row.discrepancy < 0 ? 'var(--amber)' : 'var(--ink4)'
-              }}>
-                {row.discrepancy != null ? (row.discrepancy > 0 ? `+${row.discrepancy}` : row.discrepancy) : '—'}
-              </span>
-            </div>
-          ))}
-        </div>
       </div>
 
-      {source === 'sentinelone' && vigilanceRows.length > 0 && (
-        <div className="it-card" style={{ padding: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-            <div className="it-section-title">Vigilance: consumed vs. contracted</div>
-            <span className="it-mono" style={{ fontSize: 12, color: vigilanceMismatchCount > 0 ? 'var(--red)' : 'var(--green)' }}>
-              {vigilanceMismatchCount} mismatch{vigilanceMismatchCount === 1 ? '' : 'es'}
-            </span>
-          </div>
+      {/* Slide-out client detail panel */}
+      {selected && (
+        <>
+          <div
+            onClick={() => setSelectedCompanyId(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 40 }}
+          />
           <div style={{
-            display: 'grid', gridTemplateColumns: '2fr 140px 140px',
-            gap: 10, padding: '0 12px 6px', borderBottom: '1px solid var(--border)', marginBottom: 4
+            position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '90vw',
+            background: 'white', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', zIndex: 50,
+            padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16
           }}>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>CLIENT</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>SENTINELONE</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>CONTRACTED</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {vigilanceRows.map((row) => (
-              <div key={row.companyId} style={{
-                display: 'grid', gridTemplateColumns: '2fr 140px 140px',
-                gap: 10, alignItems: 'center', padding: '8px 12px',
-                background: row.mismatch ? 'var(--red-soft)' : 'transparent', borderRadius: 6
-              }}>
-                <span style={{ fontSize: 13 }}>{row.companyName}</span>
-                <span className="it-mono" style={{ fontSize: 12, textAlign: 'right', color: row.hasConsumedVigilance ? 'var(--green)' : 'var(--ink4)' }}>
-                  {row.hasConsumedVigilance ? 'Enabled' : 'Not enabled'}
-                </span>
-                <span className="it-mono" style={{ fontSize: 12, textAlign: 'right', color: row.hasContractedVigilance ? 'var(--green)' : 'var(--ink4)' }}>
-                  {row.hasContractedVigilance ? `Contracted (${row.addons.vigilance.units})` : 'Not contracted'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div className="it-section-title">{selected.companyName}</div>
+              <button
+                onClick={() => setSelectedCompanyId(null)}
+                className="it-mono"
+                style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink4)', fontSize: 13 }}
+              >
+                Close
+              </button>
+            </div>
 
-      {source === 'saas_protect' && archiveRows.length > 0 && (
-        <div className="it-card" style={{ padding: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-            <div className="it-section-title">Long Term Account Archive: consumed vs. contracted</div>
-            <span className="it-mono" style={{ fontSize: 12, color: archiveOverageCount > 0 ? 'var(--red)' : 'var(--green)' }}>
-              {archiveOverageCount} likely unbilled
-            </span>
-          </div>
-          <div className="it-section-sub" style={{ marginBottom: 12 }}>
-            Clients with archived mailboxes but no (or insufficient) Long Term Account Archive on contract
-          </div>
-          <div style={{
-            display: 'grid', gridTemplateColumns: '2fr 140px 140px 100px',
-            gap: 10, padding: '0 12px 6px', borderBottom: '1px solid var(--border)', marginBottom: 4
-          }}>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>CLIENT</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>ARCHIVED SEATS</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>CONTRACTED ARCHIVE</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>DIFF</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {archiveRows.map((row) => (
-              <div key={row.companyId} style={{
-                display: 'grid', gridTemplateColumns: '2fr 140px 140px 100px',
-                gap: 10, alignItems: 'center', padding: '8px 12px',
-                background: row.discrepancy > 0 ? 'var(--red-soft)' : 'transparent', borderRadius: 6
-              }}>
-                <span style={{ fontSize: 13 }}>{row.companyName}</span>
-                <span className="it-mono" style={{ fontSize: 12, textAlign: 'right' }}>{row.archivedSeats}</span>
-                <span className="it-mono" style={{ fontSize: 12, textAlign: 'right', color: 'var(--ink3)' }}>{row.contractedArchive}</span>
-                <span className="it-mono" style={{
-                  fontSize: 12, textAlign: 'right', fontWeight: 600,
-                  color: row.discrepancy > 0 ? 'var(--red)' : row.discrepancy < 0 ? 'var(--amber)' : 'var(--ink4)'
-                }}>
-                  {row.discrepancy > 0 ? `+${row.discrepancy}` : row.discrepancy}
-                </span>
+            <div>
+              <div className="it-eyebrow" style={{ marginBottom: 8 }}>Contracted</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink3)' }}>Full users</span><span className="it-mono">{selected.fullUsers}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink3)' }}>Partial users</span><span className="it-mono">{selected.partialUsers}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink3)' }}>Extra devices</span><span className="it-mono">{selected.extraDevices}{selected.extraDevicesLapsed && ' (lapsed)'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink3)' }}>Servers</span><span className="it-mono">{selected.servers}</span>
+                </div>
               </div>
-            ))}
+            </div>
+
+            <div>
+              <div className="it-eyebrow" style={{ marginBottom: 8 }}>Consumed, by source</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {SOURCE_KEYS.map((key) => {
+                  const s = selected.perSource[key];
+                  return (
+                    <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ color: 'var(--ink3)' }}>{SOURCES[key].label}</span>
+                      <span className="it-mono" style={{ color: s.discrepancy ? 'var(--red)' : 'var(--ink)' }}>
+                        {s.consumedValue != null ? s.consumedValue : '—'}
+                        {s.discrepancy ? ` (${s.discrepancy > 0 ? '+' : ''}${s.discrepancy} vs ${s.contractedValue})` : ''}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className="it-eyebrow" style={{ marginBottom: 8 }}>Add-ons</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink3)' }}>Vigilance</span>
+                  <span className="it-mono" style={{ color: selected.vigilanceMismatch ? 'var(--red)' : 'var(--ink)' }}>
+                    {selected.hasContractedVigilance ? `Contracted (${selected.addons.vigilance.units})` : 'Not contracted'}
+                    {selected.hasConsumedVigilance != null && ` · ${selected.hasConsumedVigilance ? 'Enabled in S1' : 'Not enabled in S1'}`}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink3)' }}>vPenTest</span>
+                  <span className="it-mono">{selected.addons?.vPenTest?.units || 0}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink3)' }}>ACP</span>
+                  <span className="it-mono">{selected.addons?.acp?.units || 0}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink3)' }}>Long Term Archive</span>
+                  <span className="it-mono" style={{ color: selected.archiveOverage > 0 ? 'var(--red)' : 'var(--ink)' }}>
+                    {selected.contractedArchive} contracted
+                    {selected.archivedSeats != null && ` · ${selected.archivedSeats} archived seats`}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
