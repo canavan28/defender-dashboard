@@ -54,6 +54,8 @@ const SOURCES = {
   datto_rmm: {
     label: 'Datto RMM',
     deviceLabel: 'Devices',
+    contractedField: 'totalContractedDevices',
+    contractedLabel: 'CONTRACTED DEVICES',
     extractRows: (parsed) => parsed
       .filter((row) => row['Type'] === 'Managed')
       .map((row) => ({
@@ -68,12 +70,30 @@ const SOURCES = {
   sentinelone: {
     label: 'SentinelOne',
     deviceLabel: 'Active Agents',
+    contractedField: 'totalContractedDevices',
+    contractedLabel: 'CONTRACTED DEVICES',
     extractRows: (parsed) => parsed
       .filter((row) => row['Type'] === 'Paid' && row['Status'] === 'Active')
       .map((row) => ({
         name: (row['Site Name'] || '').trim(),
         devices: parseInt(row['Active Agents'], 10) || 0,
         vigilance: (row['Add-ons'] || '').includes('Vigilance'),
+      }))
+      .filter((r) => r.name),
+  },
+  saas_protect: {
+    label: 'SaaS Protect',
+    deviceLabel: 'Current Usage',
+    contractedField: 'totalContractedUsers', // user-based, not device-based
+    contractedLabel: 'CONTRACTED USERS',
+    extractRows: (parsed) => parsed
+      .map((row) => ({
+        name: (row['Client Name'] || '').trim(),
+        devices: parseInt(row['Current Usage'], 10) || 0,
+        // Archived Seats compares against a DIFFERENT contracted add-on
+        // ("Long Term Account Archive") — carried through as its own field,
+        // not folded into the main users comparison.
+        archivedSeats: parseInt(row['Archived Seats'], 10) || 0,
       }))
       .filter((r) => r.name),
   },
@@ -126,8 +146,9 @@ export function LicenseAudit({ licenseAudit }) {
   const comparisonRows = clients.map((c) => {
     const consumedEntry = sourceData.byCompany[String(c.companyId)];
     const consumedDevices = consumedEntry ? consumedEntry.devices : null;
-    const discrepancy = consumedDevices != null ? consumedDevices - c.totalContractedDevices : null;
-    return { ...c, consumedDevices, discrepancy };
+    const contractedValue = c[config.contractedField];
+    const discrepancy = consumedDevices != null ? consumedDevices - contractedValue : null;
+    return { ...c, contractedValue, consumedDevices, discrepancy };
   }).sort((a, b) => {
     if (a.discrepancy == null && b.discrepancy == null) return 0;
     if (a.discrepancy == null) return 1;
@@ -152,6 +173,23 @@ export function LicenseAudit({ licenseAudit }) {
     : [];
 
   const vigilanceMismatchCount = vigilanceRows.filter((r) => r.mismatch).length;
+
+  // Long Term Account Archive: consumed (SaaS Protect's Archived Seats) vs.
+  // contracted (addons.longTermArchive). Matt's hypothesis: most archived
+  // accounts aren't actually being billed for this — expect real overages
+  // here, not just noise.
+  const archiveRows = source === 'saas_protect'
+    ? clients.map((c) => {
+        const consumedEntry = sourceData.byCompany[String(c.companyId)];
+        const archivedSeats = consumedEntry ? (consumedEntry.archivedSeats || 0) : null;
+        const contractedArchive = c.addons?.longTermArchive?.units || 0;
+        const discrepancy = archivedSeats != null ? archivedSeats - contractedArchive : null;
+        return { ...c, archivedSeats, contractedArchive, discrepancy };
+      }).filter((r) => r.archivedSeats != null && r.archivedSeats > 0)
+        .sort((a, b) => (b.discrepancy || 0) - (a.discrepancy || 0))
+    : [];
+
+  const archiveOverageCount = archiveRows.filter((r) => r.discrepancy > 0).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -250,7 +288,7 @@ export function LicenseAudit({ licenseAudit }) {
       )}
 
       <div className="it-card" style={{ padding: 20 }}>
-        <div className="it-section-title" style={{ marginBottom: 12 }}>Contracted vs. consumed devices</div>
+        <div className="it-section-title" style={{ marginBottom: 12 }}>Contracted vs. consumed ({config.deviceLabel.toLowerCase()})</div>
         {loading && <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>Loading…</p>}
         {!loading && comparisonRows.length === 0 && (
           <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>No contracted data yet.</p>
@@ -261,7 +299,7 @@ export function LicenseAudit({ licenseAudit }) {
             gap: 10, padding: '0 12px 6px', borderBottom: '1px solid var(--border)', marginBottom: 4
           }}>
             <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>CLIENT</span>
-            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>CONTRACTED</span>
+            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>{config.contractedLabel}</span>
             <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>{config.deviceLabel.toUpperCase()}</span>
             <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>DIFF</span>
           </div>
@@ -274,7 +312,7 @@ export function LicenseAudit({ licenseAudit }) {
               background: row.discrepancy ? 'var(--red-soft)' : 'transparent', borderRadius: 6
             }}>
               <span style={{ fontSize: 13 }}>{row.companyName}</span>
-              <span className="it-mono" style={{ fontSize: 12, textAlign: 'right' }}>{row.totalContractedDevices}</span>
+              <span className="it-mono" style={{ fontSize: 12, textAlign: 'right' }}>{row.contractedValue}</span>
               <span className="it-mono" style={{ fontSize: 12, textAlign: 'right', color: 'var(--ink3)' }}>
                 {row.consumedDevices != null ? row.consumedDevices : '—'}
               </span>
@@ -318,6 +356,48 @@ export function LicenseAudit({ licenseAudit }) {
                 </span>
                 <span className="it-mono" style={{ fontSize: 12, textAlign: 'right', color: row.hasContractedVigilance ? 'var(--green)' : 'var(--ink4)' }}>
                   {row.hasContractedVigilance ? `Contracted (${row.addons.vigilance.units})` : 'Not contracted'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {source === 'saas_protect' && archiveRows.length > 0 && (
+        <div className="it-card" style={{ padding: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+            <div className="it-section-title">Long Term Account Archive: consumed vs. contracted</div>
+            <span className="it-mono" style={{ fontSize: 12, color: archiveOverageCount > 0 ? 'var(--red)' : 'var(--green)' }}>
+              {archiveOverageCount} likely unbilled
+            </span>
+          </div>
+          <div className="it-section-sub" style={{ marginBottom: 12 }}>
+            Clients with archived mailboxes but no (or insufficient) Long Term Account Archive on contract
+          </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '2fr 140px 140px 100px',
+            gap: 10, padding: '0 12px 6px', borderBottom: '1px solid var(--border)', marginBottom: 4
+          }}>
+            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>CLIENT</span>
+            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>ARCHIVED SEATS</span>
+            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>CONTRACTED ARCHIVE</span>
+            <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', textAlign: 'right' }}>DIFF</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {archiveRows.map((row) => (
+              <div key={row.companyId} style={{
+                display: 'grid', gridTemplateColumns: '2fr 140px 140px 100px',
+                gap: 10, alignItems: 'center', padding: '8px 12px',
+                background: row.discrepancy > 0 ? 'var(--red-soft)' : 'transparent', borderRadius: 6
+              }}>
+                <span style={{ fontSize: 13 }}>{row.companyName}</span>
+                <span className="it-mono" style={{ fontSize: 12, textAlign: 'right' }}>{row.archivedSeats}</span>
+                <span className="it-mono" style={{ fontSize: 12, textAlign: 'right', color: 'var(--ink3)' }}>{row.contractedArchive}</span>
+                <span className="it-mono" style={{
+                  fontSize: 12, textAlign: 'right', fontWeight: 600,
+                  color: row.discrepancy > 0 ? 'var(--red)' : row.discrepancy < 0 ? 'var(--amber)' : 'var(--ink4)'
+                }}>
+                  {row.discrepancy > 0 ? `+${row.discrepancy}` : row.discrepancy}
                 </span>
               </div>
             ))}
