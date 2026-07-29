@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { msalInstance, loginRequest } from '../auth/msalConfig';
 
 export function useAuth() {
@@ -41,11 +41,16 @@ export function useAuth() {
         init();
     }, []);
 
-    const logout = () => {
-        msalInstance.logoutRedirect();
-    };
-
-    const getToken = async () => {
+    // FIX: was a plain function before, recreated on every render — a new
+    // getToken reference every render cascades into a new `api` object in
+    // App.jsx (since createApi(getToken) wasn't memoized there either),
+    // which can retrigger any effect elsewhere that lists api/getToken as a
+    // dependency, causing a tight re-render loop with no setInterval/delay
+    // involved. This is very likely the source of the runaway
+    // /api/tickets/all requests. useCallback with an empty dependency array
+    // keeps this one stable reference for the component's lifetime, matching
+    // how msalInstance/loginRequest are themselves stable module-level values.
+    const getToken = useCallback(async () => {
         const activeAccount = msalInstance.getActiveAccount();
         if (!activeAccount) throw new Error('No active account');
         try {
@@ -58,7 +63,11 @@ export function useAuth() {
             console.error('[Auth] Silent token failed, redirecting:', err);
             await msalInstance.acquireTokenRedirect(loginRequest);
         }
-    };
+    }, []);
+
+    const logout = useCallback(() => {
+        msalInstance.logoutRedirect();
+    }, []);
 
     return { account, loading, error, logout, getToken };
 }

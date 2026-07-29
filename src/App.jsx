@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { TopBar } from './components/TopBar';
 import { NavTabs } from './components/NavTabs';
 import { TicketOverview } from './modules/TicketOverview';
@@ -21,7 +21,15 @@ import { createApi } from './utils/api';
 
 export default function App() {
   const { account, loading: authLoading, error: authError, logout, getToken } = useAuth();
-  const api = createApi(getToken);
+  // FIX: was `createApi(getToken)` called directly in the render body before
+  // — a brand-new api object (with all-new nested functions) on every single
+  // render, regardless of whether getToken actually changed. Combined with
+  // getToken itself now being stabilized in useAuth.js, this should have
+  // been feeding a runaway effect loop somewhere downstream (any effect that
+  // lists api as a dependency would see "changed" on every render and refire
+  // indefinitely — matching the observed continuous, hundreds/sec requests
+  // to /api/tickets/all with no setInterval involved).
+  const api = useMemo(() => createApi(getToken), [getToken]);
 
   const {
     rawData, loading, fullRefreshStep, error,
