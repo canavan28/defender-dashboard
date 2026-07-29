@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+
 export function getQuarterLabel(date) {
   const q = Math.floor(date.getMonth() / 3) + 1;
   return `Q${q} '${String(date.getFullYear()).slice(2)}`;
@@ -121,7 +123,16 @@ function businessMinutesBetween(startMs, endMs) {
   return Math.round(total);
 }
 
-export function useTicketMetrics(rawData, selectedQuarterKey) {
+// ── The actual computation, wrapped in useMemo below ───────────────────────
+// FIX: this entire calculation used to run on every single render of App.jsx
+// (any re-render, even one unrelated to ticket data, reran the full
+// business-hours loop, tech grading, and quarterly bucketing from scratch).
+// With DevTools attached, the instrumentation overhead of that repeated
+// heavy work compounds and shows up as near-100% CPU while the tab is
+// open — this was reported as "dashboard eats all my RAM/CPU, only when
+// DevTools is open" and is the leading suspect. Wrapping in useMemo means
+// it only recomputes when rawData or selectedQuarterKey actually change.
+function computeTicketMetrics(rawData, selectedQuarterKey) {
   if (!rawData) return null;
 
   const {
@@ -863,4 +874,12 @@ export function useTicketMetrics(rawData, selectedQuarterKey) {
     subIssueMap: rawData.subIssueMap,
     techGrades
   };
+}
+
+export function useTicketMetrics(rawData, selectedQuarterKey) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(
+    () => computeTicketMetrics(rawData, selectedQuarterKey),
+    [rawData, selectedQuarterKey]
+  );
 }
