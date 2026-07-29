@@ -126,6 +126,17 @@ export function createApi(getToken) {
       addEvent:    (companyId, type, delta, note, companyName)    => apiPost(`/api/customer-success/scores/${companyId}/events`, { type, delta, note, companyName }, getToken),
       deleteEvent: (companyId, eventId)                          => apiDelete(`/api/customer-success/scores/${companyId}/events/${eventId}`, getToken),
       sync:        ()                                            => apiPostLongRunning('/api/customer-success/sync', {}, getToken)
+    },
+    licenseAudit: {
+      contractedAll:    ()                          => apiFetch('/api/license-audit/all', getToken),
+      contractedStatus: ()                          => apiFetch('/api/license-audit/status', getToken),
+      contractedRefresh:()                          => apiFetchLongRunning('/api/license-audit/refresh', getToken),
+      contractedOne:    (companyId)                 => apiFetch(`/api/license-audit/contracted/${companyId}`, getToken),
+      companiesList:    ()                          => apiFetch('/api/license-audit/companies-list', getToken),
+      uploadConsumed:   (source, rows)               => apiPost(`/api/license-audit/consumed/${source}`, { rows }, getToken),
+      getConsumed:      (source)                    => apiFetch(`/api/license-audit/consumed/${source}`, getToken),
+      mapConsumed:      (source, rawName, companyId) => apiPost(`/api/license-audit/consumed/${source}/map`, { rawName, companyId }, getToken),
+      ignoreConsumed:   (source, rawName)            => apiPost(`/api/license-audit/consumed/${source}/ignore`, { rawName }, getToken)
     }
   };
 }

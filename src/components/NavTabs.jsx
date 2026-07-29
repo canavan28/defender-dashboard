@@ -8,6 +8,7 @@ const TABS = [
   { id: 'Action Items',      label: 'Action Items', isAction: true },
   { id: 'Inside Sales',      label: 'Inside Sales' },
   { id: 'Customer Success',  label: 'Customer Success' },
+  { id: 'License Audit',     label: 'License Audit' },
   { id: 'VTO',               label: 'VTO', isOwnerOnly: true },
 ];
 

@@ -11,12 +11,14 @@ import { ActionItems } from './modules/ActionItems';
 import { VTOTab } from './modules/VTO';
 import { InsideSales } from './modules/InsideSales';
 import { CustomerSuccess } from './modules/CustomerSuccess';
+import { LicenseAudit } from './modules/LicenseAudit';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
 import { useAuth } from './hooks/useAuth';
 import { useAIReview } from './hooks/useAIReview';
 import { useUpsells } from './hooks/useUpsells';
 import { useCustomerSuccess } from './hooks/useCustomerSuccess';
+import { useLicenseAudit } from './hooks/useLicenseAudit';
 import { createApi } from './utils/api';
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
   const aiReview = useAIReview(api);
   const upsells = useUpsells(api);
   const cs = useCustomerSuccess(getToken);
+  const licenseAudit = useLicenseAudit(getToken);
   const [activeTab, setActiveTab] = useState('Ticket overview');
   const [aiFilter, setAiFilter] = useState(null);
 
@@ -213,6 +216,10 @@ export default function App() {
 
         {activeTab === 'Customer Success' && (
           <CustomerSuccess cs={cs} companyMap={rawData?.companyMap} />
+        )}
+
+        {activeTab === 'License Audit' && (
+          <LicenseAudit licenseAudit={licenseAudit} />
         )}
 
         {activeTab === 'VTO' && isOwner && (
