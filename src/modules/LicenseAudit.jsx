@@ -93,6 +93,20 @@ const SOURCES = {
       }))
       .filter((r) => r.name),
   },
+  knowbe4: {
+    label: 'KnowBe4',
+    shortLabel: 'KB4',
+    deviceLabel: 'Users',
+    contractedField: 'totalContractedUsers',
+    contractedLabel: 'Contracted users',
+    extractRows: (parsed) => parsed
+      .filter((row) => row['Billing Type'] === 'Paid') // excludes InfoTank's own "Diamond" internal tier row
+      .map((row) => ({
+        name: (row['Organization'] || '').trim(),
+        devices: parseInt(row['Users'], 10) || 0,
+      }))
+      .filter((r) => r.name),
+  },
 };
 
 const SOURCE_KEYS = Object.keys(SOURCES);
