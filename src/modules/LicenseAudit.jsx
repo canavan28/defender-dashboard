@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { MetricCard } from '../components/MetricCard';
 
 // Minimal CSV parser handling quoted fields with embedded commas. No new
-// npm dependency needed for a format this simple.
-function parseCSV(text) {
+// npm dependency needed for a format this simple. Returns raw row arrays —
+// parseCSV() below maps row 0 as headers (the normal case); some exports
+// (SaaS Alerts) need the header row found dynamically instead, since it's
+// buried under junk title rows from a copy-paste export.
+function parseCSVRows(text) {
   const rows = [];
   let row = [];
   let field = '';
@@ -37,10 +40,29 @@ function parseCSV(text) {
     row.push(field);
     rows.push(row);
   }
+  return rows;
+}
 
+function parseCSV(text) {
+  const rows = parseCSVRows(text);
   if (rows.length === 0) return [];
   const headers = rows[0].map((h) => h.trim());
   return rows.slice(1).map((r) => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (r[i] || '').trim(); });
+    return obj;
+  });
+}
+
+// For messy copy-pasted exports where the real header row isn't row 0 —
+// finds the first row whose first cell matches headerMarker, then maps
+// every row after it using that row as headers.
+function parseCSVDynamicHeader(text, headerMarker) {
+  const rows = parseCSVRows(text);
+  const headerIdx = rows.findIndex((r) => (r[0] || '').trim() === headerMarker);
+  if (headerIdx === -1) return [];
+  const headers = rows[headerIdx].map((h) => h.trim());
+  return rows.slice(headerIdx + 1).map((r) => {
     const obj = {};
     headers.forEach((h, i) => { obj[h] = (r[i] || '').trim(); });
     return obj;
@@ -107,7 +129,40 @@ const SOURCES = {
       }))
       .filter((r) => r.name),
   },
+  // SaaS Alerts is NOT compared against the base user/device count — its
+  // client-facing name is Account Compromise Protection (already a tracked
+  // add-on, service 98), so this compares Billable Users against
+  // addons.acp.units instead. Handled as its own dedicated section below,
+  // not a main spreadsheet column — see MAIN_TABLE_KEYS.
+  saas_alerts: {
+    label: 'SaaS Alerts',
+    shortLabel: 'SaaS Alerts',
+    deviceLabel: 'Billable Users',
+    // Real header row is buried under junk title rows from a copy-paste
+    // export — find it dynamically rather than assuming row 0.
+    useDynamicHeader: true,
+    dynamicHeaderMarker: 'Organization',
+    extractRows: (parsed) => parsed
+      .filter((row) => row['Status'] === 'Active')
+      .map((row) => ({
+        // Strips both known label-suffix variants this export uses
+        // inconsistently — neither reliably indicates paying status,
+        // that's determined from our own contracted ACP data instead.
+        name: (row['Organization'] || '')
+          .replace(/\s*\(Account Compromise Protection\)\s*/, '')
+          .replace(/\s*\(Declined SaaS Alerts\)\s*/, '')
+          .trim(),
+        devices: parseInt(row['Billable Users'], 10) || 0,
+      }))
+      .filter((r) => r.name),
+  },
 };
+
+// Sources shown as their own column in the main spreadsheet — SaaS Alerts
+// is excluded since it compares against the ACP add-on specifically, not
+// the base user/device count, and gets its own dedicated section instead
+// (same treatment as Vigilance/Archive).
+const MAIN_TABLE_KEYS = ['datto_rmm', 'sentinelone', 'saas_protect', 'knowbe4'];
 
 const SOURCE_KEYS = Object.keys(SOURCES);
 
@@ -140,14 +195,17 @@ export function LicenseAudit({ licenseAudit }) {
   useEffect(() => {
     loadContracted();
     loadCompanies();
-    SOURCE_KEYS.forEach((key) => loadConsumed(key));
+    SOURCE_KEYS.forEach((key) => loadConsumed(key)); // all sources, including saas_alerts for the ACP section below
   }, []);
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const text = await file.text();
-    const parsed = parseCSV(text);
+    const config = SOURCES[uploadSource];
+    const parsed = config.useDynamicHeader
+      ? parseCSVDynamicHeader(text, config.dynamicHeaderMarker)
+      : parseCSV(text);
     const rows = SOURCES[uploadSource].extractRows(parsed);
     const result = await uploadConsumed(uploadSource, rows);
     setUploadSummary(result);
@@ -163,12 +221,14 @@ export function LicenseAudit({ licenseAudit }) {
 
   const clients = contracted?.clients ? Object.values(contracted.clients) : [];
 
-  // One row per client, with every source's consumed value + discrepancy
-  // pre-computed, plus the Vigilance and Long Term Archive comparisons.
+  // One row per client, with every main-table source's consumed value +
+  // discrepancy pre-computed, plus the Vigilance / Archive / ACP
+  // opportunity comparisons (each compares against a specific add-on, not
+  // the base user/device count, so they're handled separately).
   const tableRows = useMemo(() => {
     return clients.map((c) => {
       const perSource = {};
-      SOURCE_KEYS.forEach((key) => {
+      MAIN_TABLE_KEYS.forEach((key) => {
         const entry = consumed[key]?.byCompany?.[String(c.companyId)];
         const contractedValue = c[SOURCES[key].contractedField];
         perSource[key] = {
@@ -188,20 +248,36 @@ export function LicenseAudit({ licenseAudit }) {
       const contractedArchive = c.addons?.longTermArchive?.units || 0;
       const archiveOverage = archivedSeats != null ? archivedSeats - contractedArchive : null;
 
-      const anyDiscrepancy = SOURCE_KEYS.some((key) => perSource[key].discrepancy)
-        || vigilanceMismatch || (archiveOverage != null && archiveOverage > 0);
+      const acpEntry = consumed.saas_alerts?.byCompany?.[String(c.companyId)];
+      const billableUsers = acpEntry ? acpEntry.devices : null;
+      const contractedAcp = c.addons?.acp?.units || 0;
+      const acpOpportunity = billableUsers != null ? billableUsers - contractedAcp : null;
 
-      return { ...c, perSource, hasConsumedVigilance, hasContractedVigilance, vigilanceMismatch, archivedSeats, contractedArchive, archiveOverage, anyDiscrepancy };
+      const anyDiscrepancy = MAIN_TABLE_KEYS.some((key) => perSource[key].discrepancy)
+        || vigilanceMismatch || (archiveOverage != null && archiveOverage > 0)
+        || (acpOpportunity != null && acpOpportunity > 0);
+
+      return {
+        ...c, perSource, hasConsumedVigilance, hasContractedVigilance, vigilanceMismatch,
+        archivedSeats, contractedArchive, archiveOverage,
+        billableUsers, contractedAcp, acpOpportunity,
+        anyDiscrepancy
+      };
     }).sort((a, b) => (b.anyDiscrepancy ? 1 : 0) - (a.anyDiscrepancy ? 1 : 0));
   }, [clients, consumed]);
 
   // Overview counts, one per software type, for the top cards.
-  const overageCounts = SOURCE_KEYS.reduce((acc, key) => {
+  const overageCounts = MAIN_TABLE_KEYS.reduce((acc, key) => {
     acc[key] = tableRows.filter((r) => r.perSource[key].discrepancy).length;
     return acc;
   }, {});
   const vigilanceMismatchCount = tableRows.filter((r) => r.vigilanceMismatch).length;
   const archiveOverageCount = tableRows.filter((r) => r.archiveOverage > 0).length;
+
+  // ACP opportunity: clients with real billable usage in SaaS Alerts but no
+  // (or insufficient) contracted ACP — the sales-opportunity signal, not a
+  // billing-correction one like the others. Shown as its own column.
+  const acpOpportunityCount = tableRows.filter((r) => r.acpOpportunity > 0).length;
 
   const sourceData = consumed[uploadSource] || { byCompany: {}, unmatched: [], uploadedAt: null };
   const selected = tableRows.find((r) => r.companyId === selectedCompanyId);
@@ -220,8 +296,8 @@ export function LicenseAudit({ licenseAudit }) {
       )}
 
       {/* Overview cards — one per software type */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
-        {SOURCE_KEYS.map((key) => (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
+        {MAIN_TABLE_KEYS.map((key) => (
           <MetricCard key={key}
             eyebrow={SOURCES[key].shortLabel}
             value={overageCounts[key]}
@@ -236,6 +312,10 @@ export function LicenseAudit({ licenseAudit }) {
           value={archiveOverageCount}
           foot={archiveOverageCount > 0 ? 'Likely unbilled' : 'All aligned'}
           footTone={archiveOverageCount > 0 ? 'neg' : 'pos'} />
+        <MetricCard eyebrow="ACP opportunity"
+          value={acpOpportunityCount}
+          foot={acpOpportunityCount > 0 ? 'Not yet selling' : 'Fully captured'}
+          footTone={acpOpportunityCount > 0 ? 'neg' : 'pos'} />
       </div>
 
       {/* Upload toolbar — compact, secondary to the overview */}
@@ -338,13 +418,14 @@ export function LicenseAudit({ licenseAudit }) {
                 <th style={{ textAlign: 'left', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>CLIENT</th>
                 <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>USERS</th>
                 <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>DEVICES</th>
-                {SOURCE_KEYS.map((key) => (
+                {MAIN_TABLE_KEYS.map((key) => (
                   <th key={key} style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>
                     {SOURCES[key].shortLabel.toUpperCase()}
                   </th>
                 ))}
                 <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>VIGILANCE</th>
                 <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>ARCHIVE</th>
+                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>ACP OPP.</th>
               </tr>
             </thead>
             <tbody>
@@ -361,7 +442,7 @@ export function LicenseAudit({ licenseAudit }) {
                   <td style={{ padding: '10px 12px', fontSize: 13 }}>{row.companyName}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'right' }} className="it-mono">{row.totalContractedUsers}</td>
                   <td style={{ padding: '10px 12px', textAlign: 'right' }} className="it-mono">{row.totalContractedDevices}</td>
-                  {SOURCE_KEYS.map((key) => (
+                  {MAIN_TABLE_KEYS.map((key) => (
                     <td key={key} style={{ padding: '10px 12px', textAlign: 'right' }}>
                       <DiscrepancyCell consumedValue={row.perSource[key].consumedValue} contractedValue={row.perSource[key].contractedValue} />
                     </td>
@@ -381,6 +462,15 @@ export function LicenseAudit({ licenseAudit }) {
                     ) : (
                       <span className="it-mono" style={{ fontSize: 12, color: row.archiveOverage > 0 ? 'var(--red)' : 'var(--ink3)', fontWeight: row.archiveOverage > 0 ? 600 : 400 }}>
                         {row.archivedSeats}{row.archiveOverage > 0 && ` (+${row.archiveOverage})`}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                    {row.billableUsers == null ? (
+                      <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>—</span>
+                    ) : (
+                      <span className="it-mono" style={{ fontSize: 12, color: row.acpOpportunity > 0 ? 'var(--red)' : 'var(--ink3)', fontWeight: row.acpOpportunity > 0 ? 600 : 400 }}>
+                        {row.billableUsers}{row.acpOpportunity > 0 && ` (+${row.acpOpportunity})`}
                       </span>
                     )}
                   </td>
@@ -435,7 +525,7 @@ export function LicenseAudit({ licenseAudit }) {
             <div>
               <div className="it-eyebrow" style={{ marginBottom: 8 }}>Consumed, by source</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {SOURCE_KEYS.map((key) => {
+                {MAIN_TABLE_KEYS.map((key) => {
                   const s = selected.perSource[key];
                   return (
                     <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
@@ -466,7 +556,10 @@ export function LicenseAudit({ licenseAudit }) {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                   <span style={{ color: 'var(--ink3)' }}>ACP</span>
-                  <span className="it-mono">{selected.addons?.acp?.units || 0}</span>
+                  <span className="it-mono" style={{ color: selected.acpOpportunity > 0 ? 'var(--red)' : 'var(--ink)' }}>
+                    {selected.contractedAcp} contracted
+                    {selected.billableUsers != null && ` · ${selected.billableUsers} billable in SaaS Alerts`}
+                  </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                   <span style={{ color: 'var(--ink3)' }}>Long Term Archive</span>
