@@ -87,6 +87,8 @@ async function apiDelete(path, getToken) {
 export function createApi(getToken) {
   return {
     me: () => apiFetch('/api/me', getToken),
+    mePreviewList: () => apiFetch('/api/me/preview-list', getToken),
+    mePreview: (oid) => apiFetch(`/api/me/preview/${oid}`, getToken),
 
     tickets: {
       all:                () => apiFetch('/api/tickets/all', getToken),

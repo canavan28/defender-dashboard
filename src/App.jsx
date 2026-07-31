@@ -59,6 +59,16 @@ export default function App() {
   });
   const [accessLoaded, setAccessLoaded] = useState(false);
 
+  // Preview mode — owner-only. Lets an owner see the app exactly as any
+  // configured person would, without needing that person's actual
+  // credentials. realIsOwner is captured separately from `access` because
+  // `access` gets overwritten with the previewed person's (always
+  // non-owner) profile while previewing, but the preview control itself
+  // must stay visible/functional based on who's REALLY logged in.
+  const [realAccess, setRealAccess] = useState(null);
+  const [previewOid, setPreviewOid] = useState(null);
+  const [previewList, setPreviewList] = useState([]);
+
   const [activeCategory, setActiveCategory] = useState(null);
   const [activeTab, setActiveTab] = useState(null);
 
@@ -77,9 +87,16 @@ export default function App() {
           defaultTab: res.defaultTab || null,
         };
         setAccess(resolved);
+        setRealAccess(resolved);
         setActiveCategory(resolved.defaultCategory);
         setActiveTab(resolved.defaultTab || firstTabOf(resolved.defaultCategory));
         setAccessLoaded(true);
+
+        if (resolved.isOwner) {
+          api.mePreviewList()
+            .then((list) => { if (!cancelled) setPreviewList(list || []); })
+            .catch(() => {});
+        }
       })
       .catch(() => {
         if (cancelled) return;
@@ -93,6 +110,36 @@ export default function App() {
   const goHome = () => {
     setActiveCategory(access.defaultCategory);
     setActiveTab(access.defaultTab || firstTabOf(access.defaultCategory));
+    setAiFilter(null);
+  };
+
+  const startPreview = async (oid) => {
+    if (!oid) return;
+    try {
+      const res = await api.mePreview(oid);
+      const resolved = {
+        isOwner: false,
+        categories: res.categories || ['operations'],
+        defaultCategory: res.defaultCategory || 'operations',
+        defaultTab: res.defaultTab || null,
+        previewName: res.name,
+      };
+      setAccess(resolved);
+      setPreviewOid(oid);
+      setActiveCategory(resolved.defaultCategory);
+      setActiveTab(resolved.defaultTab || firstTabOf(resolved.defaultCategory));
+      setAiFilter(null);
+    } catch (err) {
+      console.error('[Preview] Failed to load preview access:', err.message);
+    }
+  };
+
+  const exitPreview = () => {
+    if (!realAccess) return;
+    setAccess(realAccess);
+    setPreviewOid(null);
+    setActiveCategory(realAccess.defaultCategory);
+    setActiveTab(realAccess.defaultTab || firstTabOf(realAccess.defaultCategory));
     setAiFilter(null);
   };
 
@@ -164,6 +211,47 @@ export default function App() {
         cacheInfo={rawData?.cacheInfo}
         onLogoClick={accessLoaded ? goHome : undefined}
       />
+
+      {/* Preview-as control — owner-only, always checked against realAccess
+          (the actual logged-in user), never the currently-effective
+          previewed access. */}
+      {realAccess?.isOwner && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 24px', background: previewOid ? '#fef3c7' : 'var(--card)',
+          borderBottom: '1px solid var(--border)'
+        }}>
+          {previewOid ? (
+            <>
+              <span className="it-mono" style={{ fontSize: 12.5, color: '#854d0e' }}>
+                Previewing as <strong>{access.previewName}</strong> — this is what they'd see, not you
+              </span>
+              <button
+                onClick={exitPreview}
+                className="it-mono"
+                style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #d97706', background: 'white', color: '#854d0e', fontSize: 12, cursor: 'pointer' }}
+              >
+                Exit preview
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)' }}>Preview as another user (testing only)</span>
+              <select
+                value=""
+                onChange={(e) => startPreview(e.target.value)}
+                style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: 12, fontFamily: 'inherit' }}
+              >
+                <option value="">Select a person…</option>
+                {previewList.map((p) => (
+                  <option key={p.oid} value={p.oid}>{p.name}</option>
+                ))}
+              </select>
+            </>
+          )}
+        </div>
+      )}
+
       {accessLoaded && (
         <NavTabs
           categories={access.categories}
