@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { TopBar } from './components/TopBar';
-import { NavTabs } from './components/NavTabs';
+import { NavTabs, CATEGORIES } from './components/NavTabs';
 import { TicketOverview } from './modules/TicketOverview';
 import { TechCapacity } from './modules/TechCapacity';
 import { TimeAnalytics } from './modules/TimeAnalytics';
@@ -21,16 +21,16 @@ import { useCustomerSuccess } from './hooks/useCustomerSuccess';
 import { useLicenseAudit } from './hooks/useLicenseAudit';
 import { createApi } from './utils/api';
 
+// First sub-tab of a category, used whenever a category has no explicit
+// defaultTab (e.g. clicking into a category directly) or none was returned
+// by /api/me for some reason.
+function firstTabOf(categoryId) {
+  const cat = CATEGORIES.find((c) => c.id === categoryId);
+  return cat?.tabs?.[0]?.id || null;
+}
+
 export default function App() {
   const { account, loading: authLoading, error: authError, logout, getToken } = useAuth();
-  // FIX: was `createApi(getToken)` called directly in the render body before
-  // — a brand-new api object (with all-new nested functions) on every single
-  // render, regardless of whether getToken actually changed. Combined with
-  // getToken itself now being stabilized in useAuth.js, this should have
-  // been feeding a runaway effect loop somewhere downstream (any effect that
-  // lists api as a dependency would see "changed" on every render and refire
-  // indefinitely — matching the observed continuous, hundreds/sec requests
-  // to /api/tickets/all with no setInterval involved).
   const api = useMemo(() => createApi(getToken), [getToken]);
 
   const {
@@ -44,14 +44,23 @@ export default function App() {
   const upsells = useUpsells(api);
   const cs = useCustomerSuccess(getToken);
   const licenseAudit = useLicenseAudit(getToken);
-  const [activeTab, setActiveTab] = useState('Ticket overview');
+
   const [aiFilter, setAiFilter] = useState(null);
 
-  // Whether the signed-in user is flagged as an owner (controls visibility
-  // of the VTO tab). Fetched once per session from /api/me. Defaults to
-  // false until positively confirmed -- fails closed, never shows the tab
-  // optimistically while this is loading or if the request errors.
-  const [isOwner, setIsOwner] = useState(false);
+  // Access info from /api/me: fails closed (only 'operations', no owner
+  // access) until positively confirmed, same defensive pattern the old
+  // isOwner-only check used — never show anything optimistically while
+  // this is loading or if the request errors.
+  const [access, setAccess] = useState({
+    isOwner: false,
+    categories: ['operations'],
+    defaultCategory: 'operations',
+    defaultTab: null,
+  });
+  const [accessLoaded, setAccessLoaded] = useState(false);
+
+  const [activeCategory, setActiveCategory] = useState(null);
+  const [activeTab, setActiveTab] = useState(null);
 
   useEffect(() => { if (account) sync(); }, [account]);
 
@@ -59,10 +68,44 @@ export default function App() {
     if (!account) return;
     let cancelled = false;
     api.me()
-      .then(res => { if (!cancelled) setIsOwner(!!res.isOwner); })
-      .catch(() => { if (!cancelled) setIsOwner(false); });
+      .then((res) => {
+        if (cancelled) return;
+        const resolved = {
+          isOwner: !!res.isOwner,
+          categories: res.categories || ['operations'],
+          defaultCategory: res.defaultCategory || 'operations',
+          defaultTab: res.defaultTab || null,
+        };
+        setAccess(resolved);
+        setActiveCategory(resolved.defaultCategory);
+        setActiveTab(resolved.defaultTab || firstTabOf(resolved.defaultCategory));
+        setAccessLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAccessLoaded(true); // fails closed to the operations-only default already in state
+        setActiveCategory('operations');
+        setActiveTab(firstTabOf('operations'));
+      });
     return () => { cancelled = true; };
   }, [account]);
+
+  const goHome = () => {
+    setActiveCategory(access.defaultCategory);
+    setActiveTab(access.defaultTab || firstTabOf(access.defaultCategory));
+    setAiFilter(null);
+  };
+
+  const handleChangeCategory = (categoryId) => {
+    setActiveCategory(categoryId);
+    setActiveTab(firstTabOf(categoryId));
+    setAiFilter(null);
+  };
+
+  const handleChangeTab = (tabId) => {
+    setActiveTab(tabId);
+    if (tabId !== 'AI Review') setAiFilter(null);
+  };
 
   const unactionedCount = aiReview.flags.filter(f => f.action === 'unactioned').length;
   const criticalUnactionedCount = aiReview.flags.filter(
@@ -74,6 +117,7 @@ export default function App() {
 
   const handleCriticalFlagsClick = () => {
     setAiFilter('critical');
+    setActiveCategory('operations');
     setActiveTab('AI Review');
   };
 
@@ -118,17 +162,20 @@ export default function App() {
         account={account}
         onLogout={logout}
         cacheInfo={rawData?.cacheInfo}
+        onLogoClick={accessLoaded ? goHome : undefined}
       />
-      <NavTabs
-        active={activeTab}
-        onChange={(tab) => {
-          setActiveTab(tab);
-          if (tab !== 'AI Review') setAiFilter(null);
-        }}
-        aiUnactionedCount={unactionedCount}
-        actionItemsCount={actionItemsCount}
-        isOwner={isOwner}
-      />
+      {accessLoaded && (
+        <NavTabs
+          categories={access.categories}
+          isOwner={access.isOwner}
+          activeCategory={activeCategory}
+          activeTab={activeTab}
+          onChangeCategory={handleChangeCategory}
+          onChangeTab={handleChangeTab}
+          aiUnactionedCount={unactionedCount}
+          actionItemsCount={actionItemsCount}
+        />
+      )}
 
       <main style={{ flex: 1, padding: '20px 24px 28px' }}>
         {loading && !rawData && (
@@ -155,6 +202,12 @@ export default function App() {
               Connection error
             </p>
             <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>{error}</p>
+          </div>
+        )}
+
+        {activeCategory === 'finance' && !activeTab && (
+          <div className="it-card" style={{ padding: 32, textAlign: 'center' }}>
+            <p style={{ fontSize: 14, color: 'var(--ink3)' }}>Finance tabs are coming soon.</p>
           </div>
         )}
 
@@ -222,7 +275,7 @@ export default function App() {
           <LicenseAudit licenseAudit={licenseAudit} />
         )}
 
-        {activeTab === 'VTO' && isOwner && (
+        {activeTab === 'VTO' && access.isOwner && (
           <VTOTab getToken={getToken} currentUserName={account?.name} />
         )}
       </main>

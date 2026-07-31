@@ -1,4 +1,4 @@
-export function TopBar({ lastSynced, loading, onSync, account, onLogout, cacheInfo }) {
+export function TopBar({ lastSynced, loading, onSync, account, onLogout, cacheInfo, onLogoClick }) {
   const time = lastSynced
     ? lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
@@ -16,7 +16,11 @@ export function TopBar({ lastSynced, loading, onSync, account, onLogout, cacheIn
       alignItems: 'center',
       justifyContent: 'space-between'
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div
+        onClick={onLogoClick}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onLogoClick ? 'pointer' : 'default' }}
+        title={onLogoClick ? 'Back to your home tab' : undefined}
+      >
         <img src="/infotank-logo.png" alt="InfoTank" style={{ height: 26 }} />
         <div style={{ height: 22, width: 1, background: 'var(--border)', marginRight: 2 }} />
         <div>
