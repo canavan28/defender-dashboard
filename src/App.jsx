@@ -58,6 +58,7 @@ export default function App() {
     defaultTab: null,
   });
   const [accessLoaded, setAccessLoaded] = useState(false);
+  const [accessDeniedError, setAccessDeniedError] = useState(false);
 
   // Preview mode — owner-only. Lets an owner see the app exactly as any
   // configured person would, without needing that person's actual
@@ -98,8 +99,17 @@ export default function App() {
             .catch(() => {});
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
+        // A 403 here specifically means ALLOWED_USER_OBJECT_IDS doesn't
+        // include this person yet — a completely different gate from
+        // userAccess.json (this one controls whether they can log in at
+        // all). Surfacing this clearly instead of silently defaulting to
+        // Operations, which just relocates the same failure one click
+        // later when their ticket data also 403s.
+        if (String(err.message).includes('403')) {
+          setAccessDeniedError(true);
+        }
         setAccessLoaded(true); // fails closed to the operations-only default already in state
         setActiveCategory('operations');
         setActiveTab(firstTabOf('operations'));
@@ -199,6 +209,27 @@ export default function App() {
   }
 
   if (!account) return null;
+
+  if (accessDeniedError) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg)'
+      }}>
+        <div className="it-card" style={{ padding: 32, maxWidth: 440, textAlign: 'center' }}>
+          <img src="/infotank-logo.png" alt="InfoTank" style={{ height: 28, marginBottom: 16 }} />
+          <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', marginBottom: 8 }}>
+            Your account isn't set up yet
+          </p>
+          <p style={{ fontSize: 13, color: 'var(--ink3)' }}>
+            You're signed in as {account?.name}, but this dashboard hasn't been configured for your account yet.
+            Contact Matt Canavan to finish setting up access.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
