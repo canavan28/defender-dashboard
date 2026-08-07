@@ -119,16 +119,15 @@ export function createApi(getToken) {
       unlock:   (id)                => apiPost(`/api/vto/${id}/unlock`, {}, getToken)
     },
     // Team Rocks — the lightweight, non-owner "run the meeting" counterpart
-    // to VTO. No history/year concept; scoped by quarter + manager instead.
+    // to VTO. One shared record per quarter (no per-manager scoping);
+    // rock ownership is captured via each rock's own `owner` field instead.
     teamRocks: {
-      rollup:   (quarter)          => apiFetch(`/api/team-rocks${quarter ? `?quarter=${encodeURIComponent(quarter)}` : ''}`, getToken),
-      managers: ()                 => apiFetch('/api/team-rocks/managers', getToken),
-      get:      (id)               => apiFetch(`/api/team-rocks/${id}`, getToken),
-      create:   (manager, quarter) => apiPost('/api/team-rocks', { manager, quarter }, getToken),
-      update:   (id, path, value)  => apiPatch(`/api/team-rocks/${id}`, { path, value }, getToken),
-      finalize: (id)                => apiPost(`/api/team-rocks/${id}/finalize`, {}, getToken),
-      unlock:   (id)                => apiPost(`/api/team-rocks/${id}/unlock`, {}, getToken),
-      remove:   (id, force)         => apiDelete(`/api/team-rocks/${id}${force ? '?force=true' : ''}`, getToken)
+      get:      (quarter)               => apiFetch(`/api/team-rocks/${quarter}`, getToken),
+      start:    (quarter)               => apiPost('/api/team-rocks', { quarter }, getToken),
+      update:   (quarter, path, value)  => apiPatch(`/api/team-rocks/${quarter}`, { path, value }, getToken),
+      finalize: (quarter)                => apiPost(`/api/team-rocks/${quarter}/finalize`, {}, getToken),
+      unlock:   (quarter)                => apiPost(`/api/team-rocks/${quarter}/unlock`, {}, getToken),
+      remove:   (quarter, force)         => apiDelete(`/api/team-rocks/${quarter}${force ? '?force=true' : ''}`, getToken)
     },
     upsells: {
       all:     () => apiFetch('/api/upsells/all', getToken),

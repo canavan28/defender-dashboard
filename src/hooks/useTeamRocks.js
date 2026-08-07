@@ -4,10 +4,8 @@ import { createApi } from '../utils/api';
 const AUTOSAVE_DEBOUNCE_MS = 1200;
 
 export function useTeamRocks(getToken) {
-  const [rollup, setRollup] = useState([]);       // summary cards for the rollup view
-  const [rollupQuarter, setRollupQuarter] = useState(null);
-  const [managers, setManagers] = useState([]);    // known manager names, for the "pick or type" control
-  const [doc, setDoc] = useState(null);            // currently open record (includes embedded prevQuarter)
+  const [doc, setDoc] = useState(null);        // the current quarter's shared record, or null
+  const [notStarted, setNotStarted] = useState(false); // true when the quarter has no record yet (404)
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -15,51 +13,32 @@ export function useTeamRocks(getToken) {
   const api = createApi(getToken);
   const debounceRef = useRef({});  // keyed by path string -> timeout id
 
-  const loadRollup = useCallback(async (quarter) => {
+  const loadQuarter = useCallback(async (quarter) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.teamRocks.rollup(quarter);
-      setRollup(res.records || []);
-      setRollupQuarter(res.quarter);
+      const record = await api.teamRocks.get(quarter);
+      setDoc(record);
+      setNotStarted(false);
     } catch (err) {
-      setError(err.message);
+      if (String(err.message).includes('404')) {
+        setDoc(null);
+        setNotStarted(true);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
   }, [getToken]);
 
-  const loadManagers = useCallback(async () => {
-    try {
-      const res = await api.teamRocks.managers();
-      setManagers(res.managers || []);
-    } catch (err) {
-      setError(err.message);
-    }
-  }, [getToken]);
-
-  const openRecord = useCallback(async (id) => {
+  const startMeeting = useCallback(async (quarter) => {
     setLoading(true);
     setError(null);
     try {
-      const record = await api.teamRocks.get(id);
+      const record = await api.teamRocks.start(quarter);
       setDoc(record);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [getToken]);
-
-  // Starts a new quarter's meeting for a manager. Backend auto-links the
-  // prior quarter's record for that manager (if one exists) so it arrives
-  // read-only on doc.prevQuarter.
-  const createNew = useCallback(async (manager, quarter) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const record = await api.teamRocks.create(manager, quarter);
-      setDoc(record);
+      setNotStarted(false);
       return record;
     } catch (err) {
       setError(err.message);
@@ -86,21 +65,21 @@ export function useTeamRocks(getToken) {
     debounceRef.current[key] = setTimeout(async () => {
       setSaving(true);
       try {
-        await api.teamRocks.update(doc?.id, fieldPath, value);
+        await api.teamRocks.update(doc?.quarter, fieldPath, value);
       } catch (err) {
         setError(`Autosave failed: ${err.message}`);
       } finally {
         setSaving(false);
       }
     }, AUTOSAVE_DEBOUNCE_MS);
-  }, [getToken, doc?.id]);
+  }, [getToken, doc?.quarter]);
 
   const finalize = useCallback(async () => {
-    if (!doc?.id) return;
+    if (!doc?.quarter) return;
     setSaving(true);
     setError(null);
     try {
-      const updated = await api.teamRocks.finalize(doc.id);
+      const updated = await api.teamRocks.finalize(doc.quarter);
       setDoc(updated);
       return updated;
     } catch (err) {
@@ -109,14 +88,14 @@ export function useTeamRocks(getToken) {
     } finally {
       setSaving(false);
     }
-  }, [getToken, doc?.id]);
+  }, [getToken, doc?.quarter]);
 
   const unlock = useCallback(async () => {
-    if (!doc?.id) return;
+    if (!doc?.quarter) return;
     setSaving(true);
     setError(null);
     try {
-      const updated = await api.teamRocks.unlock(doc.id);
+      const updated = await api.teamRocks.unlock(doc.quarter);
       setDoc(updated);
       return updated;
     } catch (err) {
@@ -125,26 +104,24 @@ export function useTeamRocks(getToken) {
     } finally {
       setSaving(false);
     }
-  }, [getToken, doc?.id]);
+  }, [getToken, doc?.quarter]);
 
-  const removeRecord = useCallback(async (id, force) => {
+  const removeRecord = useCallback(async (quarter, force) => {
     setSaving(true);
     setError(null);
     try {
-      await api.teamRocks.remove(id, force);
-      if (doc?.id === id) setDoc(null);
+      await api.teamRocks.remove(quarter, force);
+      if (doc?.quarter === quarter) { setDoc(null); setNotStarted(true); }
     } catch (err) {
       setError(err.message);
       throw err;
     } finally {
       setSaving(false);
     }
-  }, [getToken, doc?.id]);
-
-  const closeDoc = useCallback(() => setDoc(null), []);
+  }, [getToken, doc?.quarter]);
 
   return {
-    rollup, rollupQuarter, managers, doc, loading, saving, error,
-    loadRollup, loadManagers, openRecord, createNew, up, finalize, unlock, removeRecord, closeDoc
+    doc, notStarted, loading, saving, error,
+    loadQuarter, startMeeting, up, finalize, unlock, removeRecord
   };
 }

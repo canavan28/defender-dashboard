@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useTeamRocks } from '../hooks/useTeamRocks';
+import { IT, VTO, VTOIcon, EditList, CoreValuesBody, CoreFocusBody } from './VTOSections';
 
-// Warm/traction palette — same hex values used in VTOSections.jsx for
-// VTO-adjacent work (this tab is the non-owner counterpart to VTO's Rocks
-// section, so it reuses the same accents rather than inventing a third
-// palette).
-const TRACTION = '#3f9469';
-const TRACTION_SOFT = '#e9f5ee';
-const WARM = '#c66a3a';
-const WARM_SOFT = '#f7ece3';
+// Fixed for this quarter — revisit and update by hand next quarter if the
+// three-pillar focus changes. Not stored as data on purpose (see project
+// discussion): this is a rarely-changing banner, not a per-meeting field.
+const MEETING_FOCUS = ['Security', 'Efficiency', 'Project Sales'];
+
+const IDS_BLURB = `We use IDS — Identify, Discuss, Solve. First, get every issue out on the table, big or small, without worrying about order or who's "at fault." Then work through them together, starting with whatever's actually blocking progress. Anything that needs real action becomes a Rock below — owned by one person, with a clear finish line, not just "in progress."`;
+
+// Local field style, matching VTOSections' internal (unexported) vtoStyles.input.
+const fieldStyle = {
+  width: '100%', fontFamily: IT.font, fontSize: 14, color: IT.ink,
+  padding: '7px 11px', borderRadius: 9, border: `1px solid ${VTO.cardBorder}`,
+  outline: 'none', background: '#fffdfb', lineHeight: 1.5,
+};
 
 function currentQuarter() {
   const now = new Date();
@@ -29,11 +35,10 @@ function StatusBadge({ status }) {
   const isFinal = status === 'final';
   return (
     <span
-      className="it-mono"
       style={{
-        fontSize: 10.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999,
-        background: isFinal ? TRACTION_SOFT : WARM_SOFT,
-        color: isFinal ? TRACTION : WARM,
+        fontFamily: IT.mono, fontSize: 10.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999,
+        background: isFinal ? VTO.tractionSoft : VTO.warmSoft,
+        color: isFinal ? VTO.traction : VTO.warm,
       }}
     >
       {isFinal ? 'Final' : 'Draft'}
@@ -47,7 +52,7 @@ function QuarterPicker({ quarter, onChange }) {
       <button className="it-btn sm" onClick={() => onChange(shiftQuarter(quarter, -1))} aria-label="Previous quarter">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 6l-6 6 6 6"/></svg>
       </button>
-      <span className="it-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'center' }}>
+      <span style={{ fontFamily: IT.mono, fontSize: 13, fontWeight: 600, color: IT.ink, minWidth: 70, textAlign: 'center' }}>
         {quarter}
       </span>
       <button className="it-btn sm" onClick={() => onChange(shiftQuarter(quarter, 1))} aria-label="Next quarter">
@@ -57,121 +62,50 @@ function QuarterPicker({ quarter, onChange }) {
   );
 }
 
-// ---- Rollup view ----
-
-function RollupView({ tr, quarter, setQuarter, onOpen, onStartNew }) {
-  const [showNew, setShowNew] = useState(false);
-  const [pickedManager, setPickedManager] = useState('');
-  const [newManagerName, setNewManagerName] = useState('');
-
-  useEffect(() => { tr.loadRollup(quarter); tr.loadManagers(); }, [quarter]);
-
-  const handleStart = async () => {
-    const manager = pickedManager === '__new__' ? newManagerName.trim() : pickedManager;
-    if (!manager) return;
-    const record = await tr.createNew(manager, quarter);
-    setShowNew(false);
-    setPickedManager('');
-    setNewManagerName('');
-    onOpen(record.id);
-  };
-
+function SectionHeader({ icon, label }) {
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Team Rocks</h2>
-          <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 3 }}>
-            Rock-setting meetings — run the meeting, decide the rocks. Progress tracking lives elsewhere.
-          </p>
-        </div>
-        <QuarterPicker quarter={quarter} onChange={setQuarter} />
-      </div>
-
-      {tr.error && (
-        <div style={{ background: 'var(--red-soft)', border: '1px solid #fecaca', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-          <p className="it-mono" style={{ fontSize: 12, color: 'var(--red)' }}>{tr.error}</p>
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12, marginBottom: 20 }}>
-        {tr.rollup.map((r) => (
-          <button
-            key={r.id}
-            onClick={() => onOpen(r.id)}
-            className="it-card"
-            style={{ padding: 16, textAlign: 'left', cursor: 'pointer', border: '1px solid var(--border)' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{r.manager}</span>
-              <StatusBadge status={r.status} />
-            </div>
-            <div style={{ display: 'flex', gap: 14 }}>
-              <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>
-                {r.rocksCount} rock{r.rocksCount === 1 ? '' : 's'}
-              </span>
-              <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>
-                {r.issuesCount} issue{r.issuesCount === 1 ? '' : 's'}
-              </span>
-            </div>
-          </button>
-        ))}
-
-        {tr.rollup.length === 0 && !tr.loading && (
-          <div className="it-card" style={{ padding: 20, gridColumn: '1 / -1', textAlign: 'center' }}>
-            <p style={{ fontSize: 13, color: 'var(--ink3)' }}>No meetings started for {quarter} yet.</p>
-          </div>
-        )}
-      </div>
-
-      {!showNew ? (
-        <button className="it-btn sm" onClick={() => setShowNew(true)}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
-          New meeting
-        </button>
-      ) : (
-        <div className="it-card" style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 10, maxWidth: 480 }}>
-          <select
-            value={pickedManager}
-            onChange={(e) => setPickedManager(e.target.value)}
-            style={{ flex: 1, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: 13, fontFamily: 'inherit' }}
-          >
-            <option value="">Select a manager…</option>
-            {tr.managers.map((m) => <option key={m} value={m}>{m}</option>)}
-            <option value="__new__">+ New manager…</option>
-          </select>
-          {pickedManager === '__new__' && (
-            <input
-              value={newManagerName}
-              onChange={(e) => setNewManagerName(e.target.value)}
-              placeholder="Manager name"
-              style={{ flex: 1, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: 13, fontFamily: 'inherit' }}
-            />
-          )}
-          <button className="it-btn sm" onClick={handleStart} disabled={!pickedManager}>Start</button>
-          <button className="it-btn sm" onClick={() => setShowNew(false)}>Cancel</button>
-        </div>
-      )}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: IT.ink3 }}>
+      <VTOIcon name={icon} size={16} />
+      <span style={{ fontFamily: IT.mono, fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 500 }}>{label}</span>
     </div>
   );
 }
 
-// ---- Board (meeting) view ----
+function MeetingFocusBanner() {
+  return (
+    <div style={{
+      textAlign: 'center', padding: '26px 0', margin: '4px 0 28px',
+      borderTop: `1px solid ${VTO.cardBorder}`, borderBottom: `1px solid ${VTO.cardBorder}`,
+    }}>
+      <div style={{ fontFamily: IT.mono, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: VTO.warm, marginBottom: 10, fontWeight: 600 }}>
+        This Quarter's Focus
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: IT.ink, letterSpacing: '0.01em' }}>
+        {MEETING_FOCUS.map((f, i) => (
+          <span key={f}>
+            {i > 0 && <span style={{ color: VTO.warm, margin: '0 14px' }}>·</span>}
+            {f}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function PrevQuarterReference({ prevQuarter }) {
   const [open, setOpen] = useState(false);
   if (!prevQuarter) return null;
 
   return (
-    <div className="it-card" style={{ padding: 0, marginBottom: 18, overflow: 'hidden', border: '1px solid var(--border)' }}>
+    <div style={{ borderRadius: 11, overflow: 'hidden', border: `1px solid ${VTO.cardBorder}`, marginBottom: 20, background: '#fff' }}>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '11px 16px', background: '#fafbfc', border: 0, cursor: 'pointer', fontFamily: 'inherit'
+          padding: '11px 16px', background: '#fafbfc', border: 0, cursor: 'pointer', fontFamily: IT.font
         }}
       >
-        <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>
+        <span style={{ fontFamily: IT.mono, fontSize: 12, color: IT.ink3 }}>
           Reference: {prevQuarter.quarter} rocks &amp; issues (read-only)
         </span>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -182,219 +116,231 @@ function PrevQuarterReference({ prevQuarter }) {
       {open && (
         <div style={{ padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           <div>
-            <p className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginBottom: 8, textTransform: 'uppercase' }}>Rocks</p>
-            {(prevQuarter.rocks || []).length === 0 && <p style={{ fontSize: 13, color: 'var(--ink4)' }}>—</p>}
+            <p style={{ fontFamily: IT.mono, fontSize: 11, color: IT.ink4, marginBottom: 8, textTransform: 'uppercase' }}>Rocks</p>
+            {(prevQuarter.rocks || []).length === 0 && <p style={{ fontSize: 13, color: IT.ink4 }}>—</p>}
             {(prevQuarter.rocks || []).map((rk, i) => (
-              <p key={i} style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 6 }}>
-                {rk.desc || '—'} <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>({rk.owner || 'Unassigned'})</span>
+              <p key={i} style={{ fontSize: 13, color: IT.ink2, marginBottom: 6 }}>
+                {rk.desc || '—'} <span style={{ fontFamily: IT.mono, fontSize: 11, color: IT.ink4 }}>({rk.owner || 'Unassigned'})</span>
               </p>
             ))}
           </div>
           <div>
-            <p className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginBottom: 8, textTransform: 'uppercase' }}>Issues</p>
-            {(prevQuarter.issues || []).length === 0 && <p style={{ fontSize: 13, color: 'var(--ink4)' }}>—</p>}
+            <p style={{ fontFamily: IT.mono, fontSize: 11, color: IT.ink4, marginBottom: 8, textTransform: 'uppercase' }}>Issues</p>
+            {(prevQuarter.issues || []).length === 0 && <p style={{ fontSize: 13, color: IT.ink4 }}>—</p>}
             {(prevQuarter.issues || []).map((iss, i) => (
-              <p key={i} style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 6 }}>{iss}</p>
+              <p key={i} style={{ fontSize: 13, color: IT.ink2, marginBottom: 6 }}>{iss}</p>
             ))}
           </div>
         </div>
-      )}
-    </div>
-  );
-}
-
-function IssuesSection({ doc, editing, up, onConvert }) {
-  const issues = doc.issues || [];
-
-  const setIssue = (i, val) => {
-    const next = issues.slice();
-    next[i] = val;
-    up(['issues'], next);
-  };
-  const removeIssue = (i) => up(['issues'], issues.filter((_, idx) => idx !== i));
-  const addIssue = () => up(['issues'], [...issues, '']);
-
-  return (
-    <div className="it-card" style={{ padding: 18, marginBottom: 16, borderTop: `3px solid ${WARM}` }}>
-      <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: '0 0 12px' }}>Issues (IDS)</h3>
-      {issues.length === 0 && <p style={{ fontSize: 13, color: 'var(--ink4)' }}>No issues listed yet.</p>}
-      {issues.map((iss, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          {editing ? (
-            <input
-              value={iss}
-              onChange={(e) => setIssue(i, e.target.value)}
-              placeholder="Issue…"
-              style={{ flex: 1, padding: '7px 11px', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: 13, fontFamily: 'inherit' }}
-            />
-          ) : (
-            <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink2)' }}>{iss || '—'}</span>
-          )}
-          {editing && (
-            <>
-              <button
-                className="it-btn sm"
-                title="Convert to rock"
-                onClick={() => onConvert(i)}
-                style={{ color: TRACTION, borderColor: TRACTION }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-                Rock
-              </button>
-              <button className="it-btn sm" title="Remove issue" onClick={() => removeIssue(i)}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              </button>
-            </>
-          )}
-        </div>
-      ))}
-      {editing && (
-        <button className="it-btn sm" onClick={addIssue} style={{ marginTop: 4 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
-          Add issue
-        </button>
       )}
     </div>
   );
 }
 
 function RocksSection({ doc, editing, up }) {
+  const accent = VTO.traction;
   const rocks = doc.rocks || [];
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
 
-  const setRock = (i, key, val) => {
-    const next = rocks.map((rk, idx) => idx === i ? { ...rk, [key]: val } : rk);
-    up(['rocks'], next);
-  };
-  const removeRock = (i) => up(['rocks'], rocks.filter((_, idx) => idx !== i));
+  const setRock = (i, key, val) => up(['rocks'], rocks.map((rk, idx) => idx === i ? { ...rk, [key]: val } : rk));
   const addRock = () => up(['rocks'], [...rocks, { desc: '', owner: '' }]);
+  const removeRock = (i) => up(['rocks'], rocks.filter((_, idx) => idx !== i));
+  const handleDrop = (dropIndex) => {
+    if (dragIndex === null || dragIndex === dropIndex) { setDragIndex(null); setOverIndex(null); return; }
+    const next = rocks.slice();
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(dropIndex, 0, moved);
+    up(['rocks'], next);
+    setDragIndex(null);
+    setOverIndex(null);
+  };
 
   return (
-    <div className="it-card" style={{ padding: 18, borderTop: `3px solid ${TRACTION}` }}>
-      <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: '0 0 12px' }}>Rocks</h3>
-      {rocks.length === 0 && <p style={{ fontSize: 13, color: 'var(--ink4)' }}>No rocks set yet.</p>}
-      {rocks.map((rk, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <span className="it-mono" style={{
-            flexShrink: 0, width: 22, height: 22, borderRadius: 6, display: 'flex',
-            alignItems: 'center', justifyContent: 'center', background: TRACTION_SOFT,
-            color: TRACTION, fontSize: 11, fontWeight: 600
-          }}>{i + 1}</span>
-          {editing ? (
-            <>
-              <input
-                value={rk.desc}
-                onChange={(e) => setRock(i, 'desc', e.target.value)}
-                placeholder="Rock description…"
-                style={{ flex: 1, padding: '7px 11px', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: 13, fontFamily: 'inherit' }}
-              />
-              <input
-                value={rk.owner}
-                onChange={(e) => setRock(i, 'owner', e.target.value)}
-                placeholder="Owner"
-                style={{ width: 150, padding: '7px 11px', borderRadius: 6, border: '1px solid var(--border-strong)', fontSize: 13, fontFamily: 'inherit' }}
-              />
-              <button className="it-btn sm" title="Remove rock" onClick={() => removeRock(i)}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              </button>
-            </>
-          ) : (
-            <>
-              <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink2)' }}>{rk.desc || '—'}</span>
-              <span className="it-mono" style={{ fontSize: 11.5, color: TRACTION, background: TRACTION_SOFT, padding: '3px 10px', borderRadius: 999 }}>
-                {rk.owner || 'Unassigned'}
-              </span>
-            </>
-          )}
+    <div style={{ borderRadius: 11, overflow: 'hidden', border: `1px solid ${VTO.cardBorder}`, borderLeft: `3px solid ${accent}`, background: '#fff' }}>
+      <div style={{ padding: '13px 17px', borderBottom: `1px solid ${VTO.cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: VTO.tractionSoft }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <VTOIcon name="rocks" size={16} />
+          <div>
+            <div style={{ fontFamily: IT.mono, fontSize: 10.5, letterSpacing: '0.07em', textTransform: 'uppercase', color: accent, fontWeight: 600 }}>This Quarter</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: IT.ink, marginTop: 2 }}>Rocks</div>
+          </div>
         </div>
-      ))}
-      {editing && (
-        <button className="it-btn sm" onClick={addRock} style={{ marginTop: 4 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
-          Add rock
-        </button>
-      )}
+        <span style={{ fontFamily: IT.mono, fontSize: 10.5, color: IT.ink4 }}>{rocks.length} rock{rocks.length === 1 ? '' : 's'}</span>
+      </div>
+      <div style={{ padding: 17 }}>
+        {rocks.length === 0 && <p style={{ fontSize: 13, color: IT.ink4, marginBottom: editing ? 12 : 0 }}>No rocks set yet.</p>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rocks.map((rk, i) => (
+            <div key={i}
+              draggable={editing}
+              onDragStart={editing ? () => setDragIndex(i) : undefined}
+              onDragOver={editing ? (e) => { e.preventDefault(); setOverIndex(i); } : undefined}
+              onDragLeave={editing ? () => setOverIndex(prev => prev === i ? null : prev) : undefined}
+              onDrop={editing ? (e) => { e.preventDefault(); handleDrop(i); } : undefined}
+              onDragEnd={editing ? () => { setDragIndex(null); setOverIndex(null); } : undefined}
+              style={{ display: 'flex', gap: 8, alignItems: editing ? 'flex-start' : 'center', opacity: dragIndex === i ? 0.4 : 1, borderTop: overIndex === i && dragIndex !== null && dragIndex !== i ? `2px solid ${accent}` : '2px solid transparent' }}
+            >
+              {editing && (
+                <span title="Drag to reorder" style={{ cursor: 'grab', flexShrink: 0, color: IT.ink4, display: 'flex', alignItems: 'center', marginTop: 7 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.4"/><circle cx="16" cy="6" r="1.4"/><circle cx="8" cy="12" r="1.4"/><circle cx="16" cy="12" r="1.4"/><circle cx="8" cy="18" r="1.4"/><circle cx="16" cy="18" r="1.4"/></svg>
+                </span>
+              )}
+              <span style={{ fontFamily: IT.mono, flexShrink: 0, width: 24, height: 24, borderRadius: 7, marginTop: editing ? 7 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: VTO.tractionSoft, color: accent, fontSize: 11, fontWeight: 600 }}>{i + 1}</span>
+              {editing ? (
+                <>
+                  <div style={{ flex: 1 }}>
+                    <input value={rk.desc} placeholder="Rock description…" onChange={(e) => setRock(i, 'desc', e.target.value)} style={fieldStyle} />
+                  </div>
+                  <div style={{ width: 170, position: 'relative' }}>
+                    <input value={rk.owner} placeholder="Owner" onChange={(e) => setRock(i, 'owner', e.target.value)} style={{ ...fieldStyle, paddingLeft: 30 }} />
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={IT.ink4} strokeWidth="2" style={{ position: 'absolute', left: 10, top: 10 }}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+                  </div>
+                  <button onClick={() => removeRock(i)} title="Remove rock" className="vto-iconbtn vto-iconbtn-del" style={{ marginTop: 1 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span style={{ flex: 1, fontSize: 14, color: IT.ink2, lineHeight: 1.5 }}>{rk.desc || '—'}</span>
+                  <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#2c6a4c', fontFamily: IT.mono, padding: '3px 11px 3px 8px', borderRadius: 999, background: VTO.tractionSoft }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+                    {rk.owner || 'Unassigned'}
+                  </span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        {editing && (
+          <button className="it-btn sm" style={{ marginTop: 12, marginLeft: 32 }} onClick={addRock}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
+            Add rock
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-function BoardView({ tr, id, onBack }) {
-  useEffect(() => { tr.openRecord(id); }, [id]);
+function StartMeetingCard({ quarter, onStart, loading }) {
+  return (
+    <div style={{ border: `1px dashed ${VTO.cardBorder}`, borderRadius: 11, padding: 40, textAlign: 'center', background: '#fff' }}>
+      <p style={{ fontSize: 14, color: IT.ink3, marginBottom: 16 }}>No meeting started for {quarter} yet.</p>
+      <button className="it-btn sm" onClick={onStart} disabled={loading} style={{ background: VTO.warm, color: 'white', borderColor: VTO.warm }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 5v14M5 12h14"/></svg>
+        Start this quarter's meeting
+      </button>
+    </div>
+  );
+}
+
+export function TeamRocksTab({ getToken }) {
+  const tr = useTeamRocks(getToken);
+  const [quarter, setQuarter] = useState(currentQuarter());
+
+  useEffect(() => { tr.loadQuarter(quarter); }, [quarter]);
 
   const doc = tr.doc;
-  if (!doc || doc.id !== id) {
-    return <p className="it-mono" style={{ fontSize: 13, color: 'var(--ink3)' }}>Loading…</p>;
-  }
+  const editing = doc ? doc.status !== 'final' : false;
 
-  const editing = doc.status !== 'final';
-
-  const handleConvert = (issueIndex) => {
-    const issueText = (doc.issues || [])[issueIndex];
-    if (issueText == null) return;
-    const nextRocks = [...(doc.rocks || []), { desc: issueText, owner: '' }];
-    const nextIssues = (doc.issues || []).filter((_, idx) => idx !== issueIndex);
-    tr.up(['rocks'], nextRocks);
-    tr.up(['issues'], nextIssues);
+  const visionRef = doc?.visionRef || null;
+  // Fake "doc" wrappers so we can reuse VTO's actual CoreValuesBody/CoreFocusBody
+  // components verbatim, in read-only mode — this section is reference-only,
+  // editing core values/focus always happens in the real VTO tab.
+  const visionDoc = {
+    vision: {
+      coreValues: visionRef?.coreValues || [],
+      coreFocus: visionRef?.coreFocus || { purpose: '', niche: '' },
+    },
   };
+  const noopUp = () => {};
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <button
-            onClick={onBack}
-            className="it-mono"
-            style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 12, color: 'var(--ink3)', padding: 0, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M15 6l-6 6 6 6"/></svg>
-            All meetings
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{doc.manager}</h2>
-            <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>{doc.quarter}</span>
-            <StatusBadge status={doc.status} />
-          </div>
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: IT.ink, margin: 0 }}>Team Rocks</h2>
+          <p style={{ fontFamily: IT.mono, fontSize: 12, color: IT.ink3, marginTop: 3 }}>
+            One shared screen for the quarterly Rock-setting meeting — issues and rocks here are independent of the VTO.
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {tr.saving && <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>Saving…</span>}
-          {editing ? (
-            <button className="it-btn sm" onClick={() => tr.finalize()} style={{ background: TRACTION, color: 'white', borderColor: TRACTION }}>
-              Finalize meeting
-            </button>
-          ) : (
-            <button className="it-btn sm" onClick={() => tr.unlock()}>
-              Unlock to edit
-            </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {doc && (
+            <>
+              {tr.saving && <span style={{ fontFamily: IT.mono, fontSize: 11, color: IT.ink4 }}>Saving…</span>}
+              <StatusBadge status={doc.status} />
+              {editing ? (
+                <button className="it-btn sm" onClick={() => tr.finalize()} style={{ background: VTO.traction, color: 'white', borderColor: VTO.traction }}>
+                  Finalize meeting
+                </button>
+              ) : (
+                <button className="it-btn sm" onClick={() => tr.unlock()}>Unlock to edit</button>
+              )}
+            </>
           )}
+          <QuarterPicker quarter={quarter} onChange={setQuarter} />
         </div>
       </div>
 
       {tr.error && (
-        <div style={{ background: 'var(--red-soft)', border: '1px solid #fecaca', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-          <p className="it-mono" style={{ fontSize: 12, color: 'var(--red)' }}>{tr.error}</p>
+        <div style={{ background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <p style={{ fontFamily: IT.mono, fontSize: 12, color: IT.red }}>{tr.error}</p>
         </div>
       )}
 
-      <PrevQuarterReference prevQuarter={doc.prevQuarter} />
-      <IssuesSection doc={doc} editing={editing} up={tr.up} onConvert={handleConvert} />
-      <RocksSection doc={doc} editing={editing} up={tr.up} />
+      {tr.notStarted && !doc && (
+        <StartMeetingCard quarter={quarter} loading={tr.loading} onStart={() => tr.startMeeting(quarter)} />
+      )}
+
+      {doc && (
+        <>
+          {visionRef ? (
+            <>
+              <div style={{ marginBottom: 28 }}>
+                <SectionHeader icon="values" label={`Core Values — from FY${visionRef.sourceYear} VTO`} />
+                <CoreValuesBody doc={visionDoc} editing={false} up={noopUp} />
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <SectionHeader icon="focus" label={`Core Focus — from FY${visionRef.sourceYear} VTO`} />
+                <CoreFocusBody doc={visionDoc} editing={false} up={noopUp} />
+              </div>
+            </>
+          ) : (
+            <p style={{ fontSize: 13, color: IT.ink4, marginBottom: 20 }}>No VTO on file yet — Core Values/Focus reference will appear here once one exists.</p>
+          )}
+
+          <MeetingFocusBanner />
+
+          <p style={{ fontSize: 13.5, color: IT.ink2, lineHeight: 1.65, marginBottom: 20, maxWidth: 760 }}>
+            {IDS_BLURB}
+          </p>
+
+          <div style={{ marginBottom: 20 }}>
+            <SectionHeader icon="issues" label="Issues" />
+            <EditList
+              items={doc.issues}
+              editing={editing}
+              accent={VTO.traction}
+              dense
+              reorderable
+              onChange={(val) => tr.up(['issues'], val)}
+              placeholder="Add an issue — capture freely, prioritize later…"
+            />
+            {!editing && (doc.issues || []).length > 0 && (
+              <div style={{ fontFamily: IT.mono, fontSize: 11.5, color: IT.ink4, marginTop: 10 }}>
+                {doc.issues.length} issues captured · Identify · Discuss · Solve
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <RocksSection doc={doc} editing={editing} up={tr.up} />
+          </div>
+
+          <PrevQuarterReference prevQuarter={doc.prevQuarter} />
+        </>
+      )}
     </div>
   );
-}
-
-// ---- Tab root ----
-
-export function TeamRocksTab({ getToken }) {
-  const tr = useTeamRocks(getToken);
-  const [view, setView] = useState('rollup');
-  const [quarter, setQuarter] = useState(currentQuarter());
-  const [openId, setOpenId] = useState(null);
-
-  const openBoard = (id) => { setOpenId(id); setView('board'); };
-  const backToRollup = () => { setView('rollup'); tr.closeDoc(); tr.loadRollup(quarter); };
-
-  if (view === 'board' && openId) {
-    return <BoardView tr={tr} id={openId} onBack={backToRollup} />;
-  }
-
-  return <RollupView tr={tr} quarter={quarter} setQuarter={setQuarter} onOpen={openBoard} onStartNew={() => {}} />;
 }
