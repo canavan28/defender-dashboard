@@ -118,6 +118,18 @@ export function createApi(getToken) {
       finalize: (id, authoredBy)    => apiPost(`/api/vto/${id}/finalize`, { authoredBy }, getToken),
       unlock:   (id)                => apiPost(`/api/vto/${id}/unlock`, {}, getToken)
     },
+    // Team Rocks — the lightweight, non-owner "run the meeting" counterpart
+    // to VTO. No history/year concept; scoped by quarter + manager instead.
+    teamRocks: {
+      rollup:   (quarter)          => apiFetch(`/api/team-rocks${quarter ? `?quarter=${encodeURIComponent(quarter)}` : ''}`, getToken),
+      managers: ()                 => apiFetch('/api/team-rocks/managers', getToken),
+      get:      (id)               => apiFetch(`/api/team-rocks/${id}`, getToken),
+      create:   (manager, quarter) => apiPost('/api/team-rocks', { manager, quarter }, getToken),
+      update:   (id, path, value)  => apiPatch(`/api/team-rocks/${id}`, { path, value }, getToken),
+      finalize: (id)                => apiPost(`/api/team-rocks/${id}/finalize`, {}, getToken),
+      unlock:   (id)                => apiPost(`/api/team-rocks/${id}/unlock`, {}, getToken),
+      remove:   (id, force)         => apiDelete(`/api/team-rocks/${id}${force ? '?force=true' : ''}`, getToken)
+    },
     upsells: {
       all:     () => apiFetch('/api/upsells/all', getToken),
       refresh: () => apiFetchLongRunning('/api/upsells/refresh', getToken)

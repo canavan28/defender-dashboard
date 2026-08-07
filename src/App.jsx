@@ -9,6 +9,7 @@ import { StaffingSignals } from './modules/StaffingSignals';
 import { AIReview } from './modules/AIReview';
 import { ActionItems } from './modules/ActionItems';
 import { VTOTab } from './modules/VTO';
+import { TeamRocksTab } from './modules/TeamRocks';
 import { InsideSales } from './modules/InsideSales';
 import { CustomerSuccess } from './modules/CustomerSuccess';
 import { LicenseAudit } from './modules/LicenseAudit';
@@ -380,6 +381,10 @@ export default function App() {
 
         {activeTab === 'Action Items' && (
           <ActionItems aiReview={aiReview} />
+        )}
+
+        {activeTab === 'Team Rocks' && (
+          <TeamRocksTab getToken={getToken} currentUserName={account?.name} />
         )}
 
         {activeTab === 'Inside Sales' && (

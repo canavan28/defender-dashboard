@@ -14,6 +14,7 @@ export const CATEGORIES = [
       { id: 'Staffing signals', label: 'Staffing signals' },
       { id: 'AI Review', label: 'AI Review', isAI: true },
       { id: 'Action Items', label: 'Action Items', isAction: true },
+      { id: 'Team Rocks', label: 'Team Rocks' },
     ],
   },
   {
