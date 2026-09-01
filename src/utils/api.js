@@ -150,6 +150,12 @@ export function createApi(getToken) {
       getConsumed:      (source)                    => apiFetch(`/api/license-audit/consumed/${source}`, getToken),
       mapConsumed:      (source, rawName, companyId) => apiPost(`/api/license-audit/consumed/${source}/map`, { rawName, companyId }, getToken),
       ignoreConsumed:   (source, rawName)            => apiPost(`/api/license-audit/consumed/${source}/ignore`, { rawName }, getToken)
+    },
+    // Engineering standup — read-only, no long-running job (standup.js
+    // computes live on each request, no disk cache of its own; see that
+    // route's comments for why).
+    standup: {
+      data: () => apiFetch('/api/standup/data', getToken)
     }
   };
 }

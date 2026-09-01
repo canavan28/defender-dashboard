@@ -13,6 +13,7 @@ import { TeamRocksTab } from './modules/TeamRocks';
 import { InsideSales } from './modules/InsideSales';
 import { CustomerSuccess } from './modules/CustomerSuccess';
 import { LicenseAudit } from './modules/LicenseAudit';
+import { Standup } from './modules/Standup';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
 import { useAuth } from './hooks/useAuth';
@@ -20,6 +21,7 @@ import { useAIReview } from './hooks/useAIReview';
 import { useUpsells } from './hooks/useUpsells';
 import { useCustomerSuccess } from './hooks/useCustomerSuccess';
 import { useLicenseAudit } from './hooks/useLicenseAudit';
+import { useStandup } from './hooks/useStandup';
 import { createApi } from './utils/api';
 
 // First sub-tab of a category, used whenever a category has no explicit
@@ -45,6 +47,7 @@ export default function App() {
   const upsells = useUpsells(api);
   const cs = useCustomerSuccess(getToken);
   const licenseAudit = useLicenseAudit(getToken);
+  const standup = useStandup(api);
 
   const [aiFilter, setAiFilter] = useState(null);
 
@@ -385,6 +388,10 @@ export default function App() {
 
         {activeTab === 'Team Rocks' && (
           <TeamRocksTab getToken={getToken} currentUserName={account?.name} />
+        )}
+
+        {activeTab === 'Standup' && (
+          <Standup standup={standup} />
         )}
 
         {activeTab === 'Inside Sales' && (
