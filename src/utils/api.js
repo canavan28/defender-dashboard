@@ -118,9 +118,6 @@ export function createApi(getToken) {
       finalize: (id, authoredBy)    => apiPost(`/api/vto/${id}/finalize`, { authoredBy }, getToken),
       unlock:   (id)                => apiPost(`/api/vto/${id}/unlock`, {}, getToken)
     },
-    // Team Rocks — the lightweight, non-owner "run the meeting" counterpart
-    // to VTO. One shared record per quarter (no per-manager scoping);
-    // rock ownership is captured via each rock's own `owner` field instead.
     teamRocks: {
       get:      (quarter)               => apiFetch(`/api/team-rocks/${quarter}`, getToken),
       start:    (quarter)               => apiPost('/api/team-rocks', { quarter }, getToken),
@@ -131,7 +128,11 @@ export function createApi(getToken) {
     },
     upsells: {
       all:     () => apiFetch('/api/upsells/all', getToken),
-      refresh: () => apiFetchLongRunning('/api/upsells/refresh', getToken)
+      // No longer long-running - /refresh now returns immediately after
+      // starting the rebuild in the background (see upsells.js). Poll
+      // status() instead of waiting on this call.
+      refresh: () => apiFetch('/api/upsells/refresh', getToken),
+      status:  () => apiFetch('/api/upsells/status', getToken)
     },
     customerSuccess: {
       scores:      ()                                            => apiFetch('/api/customer-success/scores', getToken),
@@ -151,9 +152,6 @@ export function createApi(getToken) {
       mapConsumed:      (source, rawName, companyId) => apiPost(`/api/license-audit/consumed/${source}/map`, { rawName, companyId }, getToken),
       ignoreConsumed:   (source, rawName)            => apiPost(`/api/license-audit/consumed/${source}/ignore`, { rawName }, getToken)
     },
-    // Engineering standup — read-only, no long-running job (standup.js
-    // computes live on each request, no disk cache of its own; see that
-    // route's comments for why).
     standup: {
       data: () => apiFetch('/api/standup/data', getToken)
     }

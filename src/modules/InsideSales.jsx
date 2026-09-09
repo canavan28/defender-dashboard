@@ -93,9 +93,39 @@ export function InsideSales({ upsells }) {
         <p className="it-mono" style={{ fontSize: 13, color: 'var(--ink3)' }}>
           Loading upsell data...
         </p>
-        <p className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)' }}>
-          First load may take a few minutes while building the cache
+      </div>
+    );
+  }
+
+  // Cache is genuinely empty (first-ever load, or after a disk wipe) - the
+  // backend no longer silently kicks off a multi-minute rebuild in this
+  // case, so we prompt for a manual refresh instead of showing a table
+  // full of zeros.
+  if (!loading && data && data.hasData === false && !refreshing) {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        height: 256, gap: 12
+      }}>
+        <p className="it-mono" style={{ fontSize: 13, color: 'var(--ink3)' }}>
+          No upsell data yet.
         </p>
+        <button
+          onClick={refresh}
+          className="it-mono"
+          style={{
+            padding: '8px 14px',
+            fontSize: 12,
+            borderRadius: 8,
+            border: '1px solid var(--border)',
+            background: 'var(--card)',
+            color: 'var(--ink)',
+            cursor: 'pointer'
+          }}
+        >
+          Build from AutoTask
+        </button>
       </div>
     );
   }
@@ -127,7 +157,7 @@ export function InsideSales({ upsells }) {
             cursor: refreshing ? 'default' : 'pointer'
           }}
         >
-          {refreshing ? 'Refreshing (this can take a few minutes)...' : 'Refresh from AutoTask'}
+          {refreshing ? 'Refreshing in background (~5 min)...' : 'Refresh from AutoTask'}
         </button>
       </div>
 
