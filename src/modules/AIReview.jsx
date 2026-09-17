@@ -1337,6 +1337,7 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
         company: ''
     });
     const [sort, setSort] = useState('severity');
+    const [sortDir, setSortDir] = useState('asc'); // 'asc' = default order for the current field; 'desc' = reversed
     const [expandedId, setExpandedId] = useState(null);
     const [openMenu, setOpenMenu] = useState(null);
     const [exclusionOpen, setExclusionOpen] = useState(false);
@@ -1358,12 +1359,19 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
     });
 
     visible = [...visible].sort((a, b) => {
+        let cmp;
         if (sort === 'severity') {
-            if (sevRank[a.sev] !== sevRank[b.sev]) return sevRank[a.sev] - sevRank[b.sev];
-            return new Date(b.dateFlagged) - new Date(a.dateFlagged);
+            cmp = sevRank[a.sev] - sevRank[b.sev];
+            // Secondary tiebreak: newest ticket first (ticket numbers embed
+            // creation date, unlike dateFlagged which is identical for
+            // every flag from one run and so has nothing to sort by).
+            if (cmp === 0) cmp = (b.id || '').localeCompare(a.id || '');
+        } else if (sort === 'ticket') {
+            cmp = (b.id || '').localeCompare(a.id || ''); // base: newest first
+        } else {
+            cmp = (a.company || '').localeCompare(b.company || '');
         }
-        if (sort === 'date') return new Date(b.dateFlagged) - new Date(a.dateFlagged);
-        return (a.company || '').localeCompare(b.company || '');
+        return sortDir === 'asc' ? cmp : -cmp;
     });
 
     const setF = (k, v) => {
@@ -1507,11 +1515,19 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
 
                 <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink3)' }}>SORT:</div>
                 <button className="it-pill"
-                    onClick={() => setSort(s => s === 'severity' ? 'date' : s === 'date' ? 'company' : 'severity')}>
-                    {sort === 'severity' ? 'By severity' : sort === 'date' ? 'By date' : 'By company'}
-                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
-                        stroke="currentColor" strokeWidth="1.5">
-                        <path d="M3 5l3-3 3 3M3 7l3 3 3-3" />
+                    onClick={() => {
+                        setSort(s => s === 'severity' ? 'ticket' : s === 'ticket' ? 'company' : 'severity');
+                        setSortDir('asc'); // switching field starts fresh rather than inheriting the old field's direction
+                    }}>
+                    {sort === 'severity' ? 'By severity' : sort === 'ticket' ? 'By ticket #' : 'By company'}
+                </button>
+                <button className="it-pill" title="Reverse order"
+                    onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                    style={{ width: 26, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none"
+                        stroke="currentColor" strokeWidth="1.6"
+                        style={{ transform: sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                        <path d="M6 2v8M3 7l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                 </button>
 
