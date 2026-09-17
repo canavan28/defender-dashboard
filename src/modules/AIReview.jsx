@@ -55,6 +55,103 @@ function FlagTypePill({ type }) {
     );
 }
 
+function RunEstimateDialog({ estimate, loading, error, onConfirm, onCancel }) {
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(15, 20, 35, 0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
+        }} onClick={onCancel}>
+            <div className="it-card" style={{ width: 440, padding: 0 }} onClick={e => e.stopPropagation()}>
+                <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ai-deep)' }}>
+                        Run AI Review
+                    </div>
+                    <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 2 }}>
+                        Estimated cost before starting
+                    </div>
+                </div>
+
+                <div style={{ padding: '18px 20px' }}>
+                    {loading && (
+                        <div className="it-mono" style={{ fontSize: 12.5, color: 'var(--ink3)' }}>
+                            Checking how many tickets need review...
+                        </div>
+                    )}
+
+                    {!loading && error && (
+                        <div style={{ fontSize: 13, color: 'var(--red)' }}>
+                            Couldn't estimate cost: {error}
+                        </div>
+                    )}
+
+                    {!loading && !error && estimate && (
+                        <>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                                <div>
+                                    <div className="it-mono" style={{ fontSize: 20, color: 'var(--ink)', fontWeight: 500 }}>
+                                        {estimate.candidateTickets}
+                                    </div>
+                                    <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)' }}>
+                                        unreviewed tickets
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="it-mono" style={{ fontSize: 20, color: 'var(--ai-deep)', fontWeight: 600 }}>
+                                        {estimate.ticketsForClaude}
+                                    </div>
+                                    <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)' }}>
+                                        will go to Claude
+                                    </div>
+                                </div>
+                            </div>
+
+                            {(estimate.autoClosedExcluded > 0 || estimate.rmmResolvedExcluded > 0) && (
+                                <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)', marginBottom: 16 }}>
+                                    {estimate.autoClosedExcluded > 0 && `${estimate.autoClosedExcluded} auto-closed (no response)`}
+                                    {estimate.autoClosedExcluded > 0 && estimate.rmmResolvedExcluded > 0 && ' · '}
+                                    {estimate.rmmResolvedExcluded > 0 && `${estimate.rmmResolvedExcluded} RMM-resolved (no human notes)`}
+                                    {' excluded before reaching Claude'}
+                                </div>
+                            )}
+
+                            <div style={{
+                                padding: '12px 14px', borderRadius: 8,
+                                background: 'var(--ai-soft)', border: '1px solid #d6daff'
+                            }}>
+                                <div className="it-eyebrow" style={{ marginBottom: 4, color: 'var(--ai-deep)' }}>
+                                    Estimated cost
+                                </div>
+                                <div className="it-mono" style={{ fontSize: 24, fontWeight: 600, color: 'var(--ai-deep)' }}>
+                                    ${estimate.estimatedTotalCostUSD?.toFixed(2)}
+                                </div>
+                                {estimate.note ? (
+                                    <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 6 }}>
+                                        {estimate.note}
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 6 }}>
+                                        Based on the per-ticket average from the last completed run ({estimate.basedOnPriorRunTickets} tickets). Actual cost may vary.
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                <div style={{
+                    padding: '14px 20px', borderTop: '1px solid var(--border)',
+                    display: 'flex', justifyContent: 'flex-end', gap: 8
+                }}>
+                    <button className="it-btn ghost" onClick={onCancel}>Cancel</button>
+                    <button className="it-btn ai" onClick={onConfirm} disabled={loading}>
+                        Run AI Review
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function ReviewBanner({ running, runState, lastRun, reviewStats, onRun, disabled }) {
     const formatDate = (iso) => {
         if (!iso) return 'Never';
@@ -148,9 +245,20 @@ function ReviewBanner({ running, runState, lastRun, reviewStats, onRun, disabled
                                         tickets flagged
                                     </span>
                                 </div>
+                                {reviewStats.totalEstimatedCostUSD != null && (
+                                    <div>
+                                        <span className="it-mono" style={{ fontSize: 12.5, color: 'var(--ink)' }}>
+                                            ${reviewStats.totalEstimatedCostUSD.toFixed(2)}
+                                        </span>
+                                        <span className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink3)', marginLeft: 5 }}>
+                                            lifetime spend
+                                        </span>
+                                    </div>
+                                )}
                                 {reviewStats.lastRunReviewed > 0 && (
                                     <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)' }}>
                                         Last run: {reviewStats.lastRunReviewed} reviewed, {reviewStats.lastRunFlagged} flagged
+                                        {reviewStats.lastRunEstimatedCostUSD != null && ` · $${reviewStats.lastRunEstimatedCostUSD.toFixed(2)} spent`}
                                     </div>
                                 )}
                             </div>
@@ -1218,7 +1326,9 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
         loadStatus, runReview, setAction,
         addExclusion, removeExclusion,
         prompts, loadPrompts, savePrompts, resetPrompts,
-        ignoredTrends, ignoreTrend, unignoreTrend
+        ignoredTrends, ignoreTrend, unignoreTrend,
+        confirmingRun, estimate, estimateLoading, estimateError,
+        requestRun, confirmRun, cancelRun
     } = aiReview;
 
     const [filters, setFilters] = useState({
@@ -1317,9 +1427,19 @@ export function AIReview({ aiReview, initialSevFilter, syncInProgress }) {
             <ReviewBanner
                 running={running} runState={runState}
                 lastRun={lastRun} reviewStats={reviewStats}
-                onRun={runReview}
+                onRun={requestRun}
                 disabled={syncInProgress}
             />
+
+            {confirmingRun && (
+                <RunEstimateDialog
+                    estimate={estimate}
+                    loading={estimateLoading}
+                    error={estimateError}
+                    onConfirm={confirmRun}
+                    onCancel={cancelRun}
+                />
+            )}
 
             <StatsSummary flags={flags} />
 

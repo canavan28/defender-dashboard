@@ -15,6 +15,11 @@ export function useAIReview(api) {
   const [ignoredTrends, setIgnoredTrends] = useState([]);
   const [techAnalysis, setTechAnalysis] = useState({});
   const [techAnalysisRunning, setTechAnalysisRunning] = useState(null); // techId currently running
+  // Pre-run cost estimate / confirm dialog
+  const [confirmingRun, setConfirmingRun] = useState(false);
+  const [estimate, setEstimate] = useState(null);
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimateError, setEstimateError] = useState(null);
   const pollRef = useRef(null);
 
   const applyStatus = (status) => {
@@ -97,6 +102,9 @@ export function useAIReview(api) {
     }
   }, [startPolling]);
 
+  // Actually starts the run. Not called directly by the UI — use
+  // requestRun, which shows a cost estimate first and calls this only
+  // after the person confirms (or immediately if there's nothing to review).
   const runReview = useCallback(async () => {
     if (!api?.aiReview) return;
     setRunning(true);
@@ -123,6 +131,42 @@ export function useAIReview(api) {
       setError(err.message);
     }
   }, [startPolling]);
+
+  // Called by the "Run AI Review" button. Fetches a cost estimate first;
+  // if there's nothing to review, skips the confirm dialog and just runs.
+  const requestRun = useCallback(async () => {
+    if (!api?.aiReview) return;
+    setEstimateError(null);
+    setEstimate(null);
+    setEstimateLoading(true);
+    setConfirmingRun(true);
+    try {
+      const est = await api.aiReview.estimate();
+      setEstimate(est);
+      if ((est.candidateTickets || 0) === 0) {
+        // Nothing to review — no cost, no point asking for confirmation
+        setConfirmingRun(false);
+        setEstimateLoading(false);
+        runReview();
+        return;
+      }
+    } catch (err) {
+      setEstimateError(err.message);
+    } finally {
+      setEstimateLoading(false);
+    }
+  }, [runReview]);
+
+  const cancelRun = useCallback(() => {
+    setConfirmingRun(false);
+    setEstimate(null);
+    setEstimateError(null);
+  }, []);
+
+  const confirmRun = useCallback(() => {
+    setConfirmingRun(false);
+    runReview();
+  }, [runReview]);
 
   const setAction = useCallback(async (ticketId, action) => {
     setFlags(prev => prev.map(f => f.id === ticketId ? { ...f, action } : f));
@@ -234,6 +278,9 @@ export function useAIReview(api) {
     addExclusion, removeExclusion,
     prompts, loadPrompts, savePrompts, resetPrompts,
     ignoredTrends, ignoreTrend, unignoreTrend,
-    techAnalysis, techAnalysisRunning, loadTechAnalysis, runTechAnalysis
+    techAnalysis, techAnalysisRunning, loadTechAnalysis, runTechAnalysis,
+    // Pre-run cost estimate / confirm dialog
+    confirmingRun, estimate, estimateLoading, estimateError,
+    requestRun, confirmRun, cancelRun
   };
 }

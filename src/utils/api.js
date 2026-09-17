@@ -97,6 +97,7 @@ export function createApi(getToken) {
     },
     aiReview: {
       status:           () => apiFetch('/api/aireview/status', getToken),
+      estimate:         () => apiFetch('/api/aireview/estimate', getToken),
       companies:        () => apiFetch('/api/aireview/companies', getToken),
       run:              () => apiPost('/api/aireview/run', {}, getToken),
       action:           (ticketId, action) => apiPost('/api/aireview/action', { ticketId, action }, getToken),
