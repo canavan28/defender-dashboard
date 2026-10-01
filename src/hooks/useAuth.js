@@ -1,41 +1,157 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { msalInstance, loginRequest } from '../auth/msalConfig';
+import { msalInstance, loginRequest, silentRedirectUri } from '../auth/msalConfig';
 
-// MSAL tracks whether a login/token redirect is currently underway using a
-// key in the configured cache (localStorage here) ending in
-// ".interaction.status". If a redirect is interrupted before MSAL sees it
-// complete — e.g. the passkey/WebAuthn prompt takes an extra round-trip and
-// the tab is closed, backgrounded, or reloaded mid-flow — this key can be
-// left set to "in progress," and MSAL then refuses to start any new
-// login/token redirect, throwing `interaction_in_progress` on every attempt
-// until it's cleared. logoutRedirect() wipes the whole MSAL cache (including
-// this key), which is why a full logout has been "fixing" it. This clears
-// just that flag, without requiring a full logout.
+// ── Am I running inside a hidden iframe? ───────────────────────────────────
+// MSAL renews tokens in the background using a hidden iframe. If that iframe
+// ever ends up loading this app (it used to — the silent renewal returned to
+// the dashboard's home page), this copy of the app must NOT try to sign in or
+// redirect. Doing so caused MSAL's "block_iframe_reload" error and the
+// sign-in loop. Silent renewal now lands on the blank /redirect.html instead
+// (see msalConfig.js), so this guard is a backstop, not the main fix.
+const IN_IFRAME = (() => {
+    try {
+        return window.self !== window.top;
+    } catch {
+        // Cross-origin access to window.top throws — that also means iframe.
+        return true;
+    }
+})();
+
+// ── Stuck "interaction in progress" flag ───────────────────────────────────
+// MSAL tracks an in-progress login/token redirect with a localStorage key
+// ending in ".interaction.status". If a redirect is interrupted (e.g. passkey
+// prompt, tab closed mid-flow), the key can be left set, and MSAL then
+// refuses every new redirect with `interaction_in_progress`. This clears just
+// that flag without a full logout.
 function clearStuckInteractionFlag() {
     Object.keys(window.localStorage)
         .filter((key) => key.endsWith('.interaction.status'))
         .forEach((key) => window.localStorage.removeItem(key));
 }
 
+// ── Loop breaker ───────────────────────────────────────────────────────────
+// Every trip to the Microsoft sign-in page is recorded in sessionStorage
+// (which survives redirects within the same tab). If we've already sent the
+// user to Microsoft MAX_REDIRECTS_IN_WINDOW times within LOOP_WINDOW_MS and
+// still can't get a token, we stop and show an error instead of cycling
+// forever. The record is cleared whenever a token is obtained successfully,
+// so normal daily re-sign-ins never trip it.
+const REDIRECT_LOG_KEY = 'infotank.authRedirectLog';
+const LOOP_WINDOW_MS = 3 * 60 * 1000; // 3 minutes
+const MAX_REDIRECTS_IN_WINDOW = 2;
+
+const LOOP_MESSAGE =
+    'Sign-in was stopped because it kept repeating. Close this tab, wait 3 minutes, ' +
+    'then open the dashboard again. If it happens again, save the browser Console log ' +
+    'and send it to Claude.';
+
+function readRedirectLog() {
+    try {
+        const raw = window.sessionStorage.getItem(REDIRECT_LOG_KEY);
+        const entries = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(entries)) return [];
+        const now = Date.now();
+        return entries.filter((t) => typeof t === 'number' && now - t < LOOP_WINDOW_MS);
+    } catch {
+        return [];
+    }
+}
+
+function recordRedirect() {
+    const entries = readRedirectLog();
+    entries.push(Date.now());
+    try {
+        window.sessionStorage.setItem(REDIRECT_LOG_KEY, JSON.stringify(entries));
+    } catch {
+        // sessionStorage unavailable — loop breaker just won't work; not fatal.
+    }
+}
+
+function clearRedirectLog() {
+    try {
+        window.sessionStorage.removeItem(REDIRECT_LOG_KEY);
+    } catch {
+        // ignore
+    }
+}
+
 // ── Module-level "auth is ready" gate ──────────────────────────────────────
-// App.jsx calls several hooks (useUpsells, useStandup, and likely others)
-// that fire their first data load immediately on mount, with no check for
-// whether an account exists yet — unlike useDashboard's sync(), which is
-// explicitly gated with `if (account)`. React renders App() for the first
-// time, and mounts all of these hooks, before useAuth's own async init()
-// (handleRedirectPromise -> setActiveAccount) has had a chance to finish.
-// On a fresh login this means getToken() can be called before any account
-// is set, throwing "No active account" — confirmed by this being specific
-// to right-after-login, specific to the tabs whose hooks load unconditionally
-// on mount, and resolved by a hard refresh (which skips the race because
-// MSAL already has the account cached from localStorage by then).
-//
-// Rather than audit and individually gate every hook that might have this
-// pattern, getToken() itself now waits for init() to finish before it does
-// anything else — so ANY caller, no matter how early it fires, just waits
-// briefly instead of failing.
+// Several hooks load data immediately on mount, before useAuth's async init()
+// (handleRedirectPromise -> setActiveAccount) finishes. getToken() waits on
+// this promise first, so early callers wait briefly instead of failing with
+// "No active account".
 let resolveAuthReady;
 const authReady = new Promise((resolve) => { resolveAuthReady = resolve; });
+
+// Lets module-level code (redirectOnce) surface an error in the hook's state.
+let reportAuthError = () => {};
+
+// A promise that never settles. Returned to callers once a full-page redirect
+// to Microsoft has started — the page is navigating away, so callers should
+// simply wait rather than throw errors (or send "Bearer undefined" requests
+// to the backend, which the old code did).
+const waitForever = () => new Promise(() => {});
+
+// ── Single-flight redirect ─────────────────────────────────────────────────
+// On page load, many hooks call getToken() at the same moment. Previously,
+// when silent renewal failed, EACH of them started its own redirect to
+// Microsoft. Each new redirect overwrote the saved sign-in request of the one
+// before it, so when Microsoft sent the user back, MSAL couldn't match the
+// answer and started over — part of the loop. Now only the first caller
+// starts a redirect; everyone else waits on the same one.
+let redirectInFlight = null;
+
+function redirectOnce(kind, reason) {
+    if (redirectInFlight) return redirectInFlight;
+
+    if (readRedirectLog().length >= MAX_REDIRECTS_IN_WINDOW) {
+        console.error(
+            `[Auth] Redirect loop detected — already sent to Microsoft sign-in ` +
+            `${MAX_REDIRECTS_IN_WINDOW} times in the last ${LOOP_WINDOW_MS / 60000} minutes. ` +
+            `Stopping. Last reason: ${reason}`
+        );
+        reportAuthError(LOOP_MESSAGE);
+        return Promise.reject(new Error(LOOP_MESSAGE));
+    }
+
+    recordRedirect();
+    console.warn(`[Auth] Sending to Microsoft sign-in (${kind}). Reason: ${reason}`);
+
+    const start = () =>
+        kind === 'login'
+            ? msalInstance.loginRedirect(loginRequest)
+            : msalInstance.acquireTokenRedirect(loginRequest);
+
+    redirectInFlight = (async () => {
+        try {
+            await start();
+        } catch (err) {
+            if (err.errorCode === 'interaction_in_progress') {
+                // Nothing in THIS page started a redirect yet (redirectInFlight
+                // was null), so this is a leftover stuck flag. Clear and retry once.
+                console.warn('[Auth] Stuck interaction_in_progress flag — clearing and retrying once.');
+                clearStuckInteractionFlag();
+                try {
+                    await start();
+                } catch (retryErr) {
+                    redirectInFlight = null;
+                    console.error('[Auth] Redirect retry failed:', retryErr.errorCode || '(no errorCode)', retryErr.message);
+                    reportAuthError(retryErr.message);
+                    throw retryErr;
+                }
+            } else {
+                redirectInFlight = null;
+                console.error('[Auth] Redirect failed to start:', err.errorCode || '(no errorCode)', err.message);
+                reportAuthError(err.message);
+                throw err;
+            }
+        }
+        // Redirect started — page is navigating away.
+        return waitForever();
+    })();
+
+    return redirectInFlight;
+}
 
 export function useAuth() {
     const [account, setAccount] = useState(null);
@@ -43,15 +159,29 @@ export function useAuth() {
     const [error, setError] = useState(null);
     const initStarted = useRef(false);
 
+    // Wire up module-level error reporting to this hook's state.
     useEffect(() => {
-        // Guard against this effect firing more than once (e.g. React
-        // double-invoking effects in dev, or a fast remount) triggering two
-        // overlapping redirect flows, which is another way to produce a
-        // stuck interaction flag.
+        reportAuthError = (message) => {
+            setError(message);
+            setLoading(false);
+        };
+        return () => { reportAuthError = () => {}; };
+    }, []);
+
+    useEffect(() => {
+        // Guard against this effect running twice (React dev double-invoke,
+        // fast remount) and starting two overlapping sign-in flows.
         if (initStarted.current) return;
         initStarted.current = true;
 
         const init = async () => {
+            if (IN_IFRAME) {
+                // Backstop — see IN_IFRAME comment above. Do nothing here.
+                console.warn('[Auth] App loaded inside a hidden iframe — skipping sign-in in this copy.');
+                resolveAuthReady();
+                return;
+            }
+
             try {
                 await msalInstance.initialize();
 
@@ -73,30 +203,12 @@ export function useAuth() {
                     return;
                 }
 
-                // No cached account — about to redirect to Microsoft, so the
-                // page is going away. Resolve the gate anyway so nothing is
-                // left hanging if something manages to call getToken() in
-                // the brief window before the redirect actually navigates.
+                // No signed-in account — go to Microsoft. Resolve the gate so
+                // early getToken() callers fall through to the shared redirect.
                 resolveAuthReady();
-                await msalInstance.loginRedirect(loginRequest);
+                await redirectOnce('login', 'no signed-in account found');
             } catch (err) {
                 console.error('[Auth] Error:', err.errorCode || '(no errorCode)', err.message);
-
-                if (err.errorCode === 'interaction_in_progress') {
-                    console.warn('[Auth] Detected stuck interaction_in_progress flag — clearing and retrying login.');
-                    clearStuckInteractionFlag();
-                    try {
-                        await msalInstance.loginRedirect(loginRequest);
-                        return;
-                    } catch (retryErr) {
-                        console.error('[Auth] Retry after clearing flag also failed:', retryErr.errorCode || '', retryErr.message);
-                        setError(retryErr.message);
-                        setLoading(false);
-                        resolveAuthReady();
-                        return;
-                    }
-                }
-
                 setError(err.message);
                 setLoading(false);
                 resolveAuthReady();
@@ -107,27 +219,37 @@ export function useAuth() {
     }, []);
 
     const getToken = useCallback(async () => {
-        // Wait for the initial handleRedirectPromise()/getAllAccounts()
-        // check to finish before doing anything else. In the normal case
-        // (account already cached, or this is called well after mount)
-        // this promise has already resolved and adds no delay at all.
         await authReady;
 
+        if (IN_IFRAME) {
+            throw new Error('Sign-in is not available inside a hidden iframe.');
+        }
+
         const activeAccount = msalInstance.getActiveAccount();
-        if (!activeAccount) throw new Error('No active account');
+        if (!activeAccount) {
+            // init() is already redirecting to Microsoft — wait on that.
+            if (redirectInFlight) return redirectInFlight;
+            throw new Error('No active account');
+        }
+
         try {
             const response = await msalInstance.acquireTokenSilent({
                 ...loginRequest,
                 account: activeAccount,
+                // Background renewal returns to the blank page, not the app.
+                redirectUri: silentRedirectUri,
             });
+            // A real token means sign-in is healthy — reset the loop breaker.
+            clearRedirectLog();
             return response.accessToken;
         } catch (err) {
             console.error('[Auth] Silent token failed:', err.errorCode || '(no errorCode)', err.message);
-            await msalInstance.acquireTokenRedirect(loginRequest);
+            return redirectOnce('token', `silent renewal failed (${err.errorCode || err.message})`);
         }
     }, []);
 
     const logout = useCallback(() => {
+        clearRedirectLog();
         msalInstance.logoutRedirect();
     }, []);
 
