@@ -8,6 +8,7 @@ const ISSUE_COLORS = [
 ];
 
 const NON_BILLABLE_COLOR = '#cfdcfb';
+const CAPACITY_COLOR = 'var(--red)';
 const TECH_GRID = '14px 120px 1fr 64px 64px 52px';
 const WORK_TYPE_GRID = '1fr 180px 60px 88px 60px';
 
@@ -56,7 +57,7 @@ function Notice({ children }) {
 // ── Per-engineer drill-down ───────────────────────────────────────────────────
 // Shows ALL of the engineer's time, including internal time (admin, meetings,
 // training) that isn't counted in the hours/billable % on the main row.
-function TechBreakdown({ tech, priorYear, internalCountedInTotals }) {
+function TechBreakdown({ tech, priorYear, internalCountedInTotals, capacity }) {
   const types = tech.workTypes || [];
   const maxWT = types[0]?.hours || 1;
   const allHours = tech.allHours || 0;
@@ -86,6 +87,10 @@ function TechBreakdown({ tech, priorYear, internalCountedInTotals }) {
           allUnbillable > 0 ? 'var(--amber)' : undefined
         )}
         {priorYear?.available && tech.priorHours != null && stat(`${tech.priorHours}h`, `in ${priorYear.label}`)}
+        {capacity?.hours > 0 && stat(
+          `${Math.round((allHours / capacity.hours) * 100)}%`,
+          `of ${capacity.hours}h full-time (${capacity.workdays} workdays × ${capacity.hoursPerDay}h)`
+        )}
       </div>
       {!internalCountedInTotals && tech.internalHours > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginBottom: 12 }}>
@@ -166,7 +171,7 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
   const { timeAnalytics, quarterlyTrend, selectedQLabel } = metrics;
   const {
     totalHours, totalBillableHours, totalNonBillableHours, totalProjectHours,
-    totalInternalHours, internalCountedInTotals,
+    totalInternalHours, internalCountedInTotals, capacity,
     overallBillablePct, notesCoverage, hoursByTechList,
     hoursByIssueList, hoursByCompanyList, entryCount,
     priorYear, selectedQCoverage, coverageStart, projectTimeError
@@ -187,8 +192,12 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
   const maxTechHours = Math.max(
     1,
     ...hoursByTechList.map(t => t.hours),
-    ...hoursByTechList.map(t => (priorAvailable ? t.priorHours || 0 : 0))
+    ...hoursByTechList.map(t => (priorAvailable ? t.priorHours || 0 : 0)),
+    capacity?.hours || 0
   );
+  const capacityLeft = capacity?.hours > 0
+    ? Math.min(99.4, (capacity.hours / maxTechHours) * 100)
+    : null;
   const maxIssueHours = hoursByIssueList[0]?.hours || 1;
   const maxCompanyHours = (hoursByCompanyList || [])[0]?.hours || 1;
   const targetBillablePct = 80;
@@ -281,6 +290,12 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
                 Last year
               </span>
             )}
+            {capacityLeft != null && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink3)' }}>
+                <span style={{ width: 0, height: 12, borderLeft: `2px dashed ${CAPACITY_COLOR}` }} />
+                8h/workday
+              </span>
+            )}
           </div>
         </div>
 
@@ -342,6 +357,16 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
                       width: `${(tech.nonBillable / maxTechHours) * 100}%`,
                       background: NON_BILLABLE_COLOR
                     }} />
+                    {capacityLeft != null && (
+                      <div
+                        title={`${capacity.hours}h = ${capacity.workdays} workdays × ${capacity.hoursPerDay}h${capacity.isQTD ? ` (through ${capacity.throughLabel})` : ''}`}
+                        style={{
+                          position: 'absolute', top: 0, bottom: 0,
+                          left: `${capacityLeft}%`, width: 0,
+                          borderLeft: `2px dashed ${CAPACITY_COLOR}`
+                        }}
+                      />
+                    )}
                     {priorLeft != null && (
                       <div
                         title={`${tech.priorHours}h in ${priorYear.label}`}
@@ -372,6 +397,7 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
                     tech={tech}
                     priorYear={priorYear}
                     internalCountedInTotals={internalCountedInTotals}
+                    capacity={capacity}
                   />
                 )}
               </div>
@@ -389,6 +415,12 @@ export function TimeAnalytics({ metrics, selectedQuarterKey, onSelectQuarter }) 
           Target billable rate: {targetBillablePct}% · team avg: {overallBillablePct}%
           {priorAvailable && ` · team total ${priorYear.label}: ${priorYear.totalHours}h`}
         </div>
+        {capacity?.hours > 0 && (
+          <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 6 }}>
+            Red dashed line: {capacity.hours}h = {capacity.workdays} workdays × {capacity.hoursPerDay}h
+            {capacity.isQTD ? ` (quarter to date, through ${capacity.throughLabel})` : ''}, excluding weekends and InfoTank holidays.
+          </div>
+        )}
         {!internalCountedInTotals && totalInternalHours > 0 && (
           <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 6 }}>
             {totalInternalHours}h of internal time (admin, meetings, training, research, sales/quoting) isn't counted above. Click an engineer to see theirs.
