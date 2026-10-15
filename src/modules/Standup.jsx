@@ -224,7 +224,7 @@ function TaskRow({ t, flagOverdue }) {
         )}
         <span className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink3)' }}>{t.assignedTech}</span>
         <span className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)' }}>
-          {t.done ? 'done' : `due ${formatDue(t.endDateTime)}`}
+          {t.done ? 'done' : (t.endDateTime ? `due ${formatDue(t.endDateTime)}` : 'no due date')}
         </span>
         {overdue && (
           <span className="it-mono" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--red)' }}>
@@ -306,7 +306,7 @@ function ProjectRow({ title, badges, subtitle, rightContent, tasks, flagOverdue 
 function EngineeringProjectsSection({ projects }) {
   return (
     <div className="it-card" style={{ padding: 20, marginBottom: 20 }}>
-      <SectionHeader eyebrow="Open \u00B7 click a project for its tasks" title="Engineering Projects" count={projects.length} />
+      <SectionHeader eyebrow="Open · click a project for its tasks" title="Engineering Projects" count={projects.length} />
       {projects.length === 0 && <EmptyRow>No open engineering projects.</EmptyRow>}
       {projects.map(p => (
         <ProjectRow
@@ -341,7 +341,7 @@ function OnboardingOverdueSection({ projects }) {
   const totalOverdue = projects.reduce((s, p) => s + (p.overdueCount || 0), 0);
   return (
     <div className="it-card" style={{ padding: 20, marginBottom: 20 }}>
-      <SectionHeader eyebrow="Onboarding \u00B7 click a project for its tasks" title="Overdue Onboarding Tasks" count={totalOverdue} />
+      <SectionHeader eyebrow="Onboarding · click a project for its tasks" title="Overdue Onboarding Tasks" count={totalOverdue} />
       {projects.length === 0 && <EmptyRow>No overdue onboarding tasks.</EmptyRow>}
       {projects.map(p => (
         <ProjectRow
