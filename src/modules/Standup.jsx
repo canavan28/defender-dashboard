@@ -11,6 +11,14 @@ const SEV_COLORS = {
   low: { fg: 'var(--ink3)', bg: '#f1f5f9' }
 };
 
+// Task-based progress ("% Complete - Tasks" in AutoTask), e.g. "3 of 40
+// tasks (8%)". null means the project has no tasks or the task fetch
+// failed — show a dash rather than a misleading 0%.
+function formatProgress(tp) {
+  if (!tp) return '— no task data';
+  return `${tp.done} of ${tp.total} tasks (${tp.percent}%)`;
+}
+
 function SectionHeader({ eyebrow, title, count }) {
   return (
     <div style={{ marginBottom: 12 }}>
@@ -98,12 +106,16 @@ function DraggingSection({ tickets }) {
   );
 }
 
-function AIEscalationsSection({ flags }) {
+function AIEscalationsSection({ flags: allFlags }) {
+  // A few old flags in reviewed.json have no ticket number (a past AI
+  // Review run glitch) and would render with a broken link, so they're
+  // skipped — and excluded from the count so it matches the rows shown.
+  const flags = allFlags.filter(f => f.id);
   return (
     <div className="it-card" style={{ padding: 20, marginBottom: 20 }}>
       <SectionHeader eyebrow="Last 7 days" title="AI Review Escalations" count={flags.length} />
       {flags.length === 0 && <EmptyRow>No new AI escalations in the last 7 days.</EmptyRow>}
-      {flags.filter(f => f.id).map(f => {
+      {flags.map(f => {
         const colors = SEV_COLORS[f.sev] || SEV_COLORS.low;
         return (
           <div key={f.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
@@ -156,7 +168,7 @@ function EngineeringProjectsSection({ projects }) {
           </div>
           <div style={{ flexShrink: 0, textAlign: 'right' }}>
             <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>
-              {p.percentComplete}% complete
+              {formatProgress(p.taskProgress)}
             </span>
           </div>
         </div>
@@ -174,7 +186,7 @@ function OnboardingOverdueSection({ projects }) {
       {projects.map(p => (
         <div key={p.projectId} style={{ marginBottom: 16 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
-            {p.projectName} <span style={{ fontWeight: 400, color: 'var(--ink3)' }}>&middot; {p.companyName} &middot; {p.percentComplete}% complete</span>
+            {p.projectName} <span style={{ fontWeight: 400, color: 'var(--ink3)' }}>&middot; {p.companyName} &middot; {formatProgress(p.taskProgress)}</span>
           </p>
           {p.tasks.map(t => (
             <div key={t.taskNumber} style={{
@@ -264,10 +276,10 @@ export function Standup({ standup }) {
       )}
 
       <ScheduledSection tickets={data.scheduledTickets} />
-      <DraggingSection tickets={data.draggingTickets} />
-      <AIEscalationsSection flags={data.aiEscalations} />
       <EngineeringProjectsSection projects={data.engineeringProjects} />
       <OnboardingOverdueSection projects={data.onboardingOverdue} />
+      <DraggingSection tickets={data.draggingTickets} />
+      <AIEscalationsSection flags={data.aiEscalations} />
     </div>
   );
 }
