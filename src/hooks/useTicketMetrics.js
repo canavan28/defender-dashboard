@@ -503,7 +503,9 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
   const OUTLIER_THRESHOLD = 1.25;
 
   // Tier 2/3 tech IDs — FCR excluded for these
-  const TIER2_3_IDS = new Set([29682910, 29682889, 29682904, 29682899]);
+  // 29682899 = Chris McDaniel (former T3, kept so his historical tickets still grade correctly)
+  // 29682944 = Robert Adams (T3, took over Chris McDaniel's role)
+  const TIER2_3_IDS = new Set([29682910, 29682889, 29682904, 29682899, 29682944]);
 
   const gradeTicketSource = selectedQTickets.length > 0 ? selectedQTickets : allTickets;
   const gradeTeSource = filterTimeEntries(
@@ -515,7 +517,8 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
   const TECH_TIERS_LOCAL = {
     29682924: 1, 29682927: 1,
     29682910: 2, 29682889: 2,
-    29682904: 3, 29682899: 3
+    29682904: 3, 29682899: 3,
+    29682944: 3
   };
 
   // Build ticket -> total hours logged map from time entries
