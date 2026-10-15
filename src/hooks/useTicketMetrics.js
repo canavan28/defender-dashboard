@@ -123,6 +123,36 @@ function businessMinutesBetween(startMs, endMs) {
   return Math.round(total);
 }
 
+// ── Small helpers ─────────────────────────────────────────────────────────────
+const round1 = (n) => parseFloat((n || 0).toFixed(1));
+
+// Each time entry is 'ticket', 'project' (real project task) or 'internal'
+// (Admin Time, Internal Meeting, Training, Research, Sales/Quoting, Drill).
+// The backend labels this; the fallback covers an older payload.
+const entryKind = (te) => {
+  if (te.entryKind) return te.entryKind;
+  if (te.ticketID) return 'ticket';
+  if (te.taskID) return te.projectID != null ? 'project' : 'internal';
+  return 'ticket';
+};
+const isProjectEntry = (te) => entryKind(te) === 'project';
+const isInternalEntry = (te) => entryKind(te) === 'internal';
+
+// Internal time is ~26% of all hours. It is NOT counted in total hours,
+// billable %, the issue/company views or the year-over-year comparison, so
+// those keep measuring client + project work. It IS shown in each engineer's
+// drill-down. Flip to true to count internal time everywhere.
+const INCLUDE_INTERNAL_IN_TOTALS = false;
+const countsInTotals = (te) => INCLUDE_INTERNAL_IN_TOTALS || !isInternalEntry(te);
+
+// Backend now sends a hasNotes flag instead of the note text. Falls back to
+// the old fields in case an older payload is ever received.
+const entryHasNotes = (te) => {
+  if (te.hasNotes != null) return !!te.hasNotes;
+  return !!((te.summaryNotes && te.summaryNotes.trim().length > 0) ||
+            (te.internalNotes && te.internalNotes.trim().length > 0));
+};
+
 // ── The actual computation, wrapped in useMemo below ───────────────────────
 // FIX: this entire calculation used to run on every single render of App.jsx
 // (any re-render, even one unrelated to ticket data, reran the full
@@ -138,7 +168,8 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
   const {
     allTickets, completedTickets, openTickets,
     timeEntries, resources, excludeResources,
-    issueTypeMap, subIssueMap, companyMap
+    issueTypeMap, subIssueMap, companyMap,
+    billingCodeMap, cacheInfo
   } = rawData;
 
   const now = new Date();
@@ -201,10 +232,14 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
   let selectedQCompleted = [];
   let selectedQTimeEntries = [];
   let selectedQLabel = '';
+  let selectedQStart = null;
+  let selectedQEnd = null;
 
   if (selectedQuarterKey) {
     const { year, quarter } = parseQuarterKey(selectedQuarterKey);
     const { start, end } = getQuarterRange(year, quarter);
+    selectedQStart = start;
+    selectedQEnd = end;
     selectedQLabel = `Q${quarter} ${year}`;
     selectedQTickets = filterByDateRange(allTickets, start, end);
     selectedQCompleted = filterByDateRange(completedTickets, start, end, 'completedDate');
@@ -328,6 +363,9 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
     .sort((a, b) => b.count - a.count);
 
   // ── Time entry analytics ──────────────────────────────────────────────────
+  // Includes ticket time and project (task) time; internal time only where
+  // noted (see INCLUDE_INTERNAL_IN_TOTALS). Non-ticket entries have no ticket,
+  // so the HSCC Daily Onsite exclusion below never removes them.
   const EXCLUDE_ISSUE_TYPES_TIME = new Set(['27']);
 
   const filterTimeEntries = (entries) => entries.filter(te => {
@@ -336,22 +374,139 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
     return !EXCLUDE_ISSUE_TYPES_TIME.has(String(ticket.issueType));
   });
 
-  const teSource = filterTimeEntries(
-    selectedQTimeEntries.length > 0
-      ? selectedQTimeEntries
-      : (timeEntries || [])
+  const workTypeLabel = (id) => {
+    if (id == null || id === '') return 'No work type';
+    return (billingCodeMap && billingCodeMap[String(id)]) || `Work type ${id}`;
+  };
+
+  const inRange = (te, start, end) => {
+    if (!te.dateWorked) return false;
+    const d = new Date(te.dateWorked);
+    return d >= start && d <= end;
+  };
+
+  // FIX: previously, if the selected quarter had zero time entries (e.g. it
+  // was older than the time entry window), this silently fell back to ALL
+  // time entries while still labelling the result with the quarter's name.
+  // Now a selected quarter always uses only its own entries — if it has none,
+  // the tab shows zeros plus a coverage warning instead of misleading totals.
+  const periodEntriesAll = filterTimeEntries(
+    selectedQuarterKey ? selectedQTimeEntries : (timeEntries || [])
+  );
+  const teSource = periodEntriesAll.filter(countsInTotals);
+  const totalInternalHours = round1(
+    periodEntriesAll.filter(isInternalEntry).reduce((s, te) => s + (te.hoursWorked || 0), 0)
   );
 
-  // Hours by tech
+  // ── Time data coverage ────────────────────────────────────────────────────
+  // Earliest date time entries are complete from. Comes from the backend; if
+  // missing (older payload), fall back to the earliest entry we actually have.
+  let coverageStart = cacheInfo?.timeEntriesSince ? new Date(cacheInfo.timeEntriesSince) : null;
+  if (!coverageStart && (timeEntries || []).length) {
+    let minMs = Infinity;
+    timeEntries.forEach(te => {
+      if (!te.dateWorked) return;
+      const ms = new Date(te.dateWorked).getTime();
+      if (ms < minMs) minMs = ms;
+    });
+    if (minMs < Infinity) coverageStart = new Date(minMs);
+  }
+
+  let selectedQCoverage = 'full'; // 'full' | 'partial' | 'none'
+  if (selectedQStart && coverageStart && selectedQStart < coverageStart) {
+    selectedQCoverage = selectedQEnd < coverageStart ? 'none' : 'partial';
+  }
+
+  // ── Same quarter, prior year ──────────────────────────────────────────────
+  // For a completed quarter: the full same quarter last year.
+  // For the current, in-progress quarter: last year's quarter only up to
+  // today's date last year, so it's a fair quarter-to-date comparison.
+  // Only shown when time data fully covers last year's quarter — a partial
+  // prior-year number would make every change look artificially large.
+  let priorYear = null;
+  const isCurrentQuarter = selectedQuarterKey === getQuarterKey(now);
+
+  if (selectedQuarterKey) {
+    const { year, quarter } = parseQuarterKey(selectedQuarterKey);
+    const { start: pStart, end: pFullEnd } = getQuarterRange(year - 1, quarter);
+    let pEnd = pFullEnd;
+    let label = `Q${quarter} ${year - 1}`;
+    if (isCurrentQuarter) {
+      const sameDayLastYear = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 23, 59, 59);
+      if (sameDayLastYear < pEnd) {
+        pEnd = sameDayLastYear;
+        label += ` through ${sameDayLastYear.toLocaleString('en-US', { month: 'short' })} ${sameDayLastYear.getDate()}`;
+      }
+    }
+
+    const available = !coverageStart || pStart >= coverageStart;
+
+    if (available) {
+      const priorEntries = filterTimeEntries((timeEntries || []).filter(te => inRange(te, pStart, pEnd)))
+        .filter(countsInTotals);
+      let total = 0, bill = 0, non = 0;
+      const byTech = {};
+      priorEntries.forEach(te => {
+        const h = te.hoursWorked || 0;
+        total += h;
+        if (te.isNonBillable) non += h; else bill += h;
+        const name = resourceMap[te.resourceID];
+        if (!name) return;
+        if (!byTech[name]) byTech[name] = { hours: 0, billable: 0, nonBillable: 0 };
+        byTech[name].hours += h;
+        if (te.isNonBillable) byTech[name].nonBillable += h;
+        else byTech[name].billable += h;
+      });
+      Object.values(byTech).forEach(t => {
+        t.hours = round1(t.hours);
+        t.billable = round1(t.billable);
+        t.nonBillable = round1(t.nonBillable);
+      });
+      priorYear = {
+        available: true,
+        label,
+        totalHours: round1(total),
+        totalBillableHours: round1(bill),
+        totalNonBillableHours: round1(non),
+        byTech
+      };
+    } else {
+      priorYear = { available: false, label, byTech: {} };
+    }
+  }
+
+  // Hours by tech. The bar/hours/billable % use counted time only; the
+  // drill-down (workTypes) shows ALL of the engineer's time, internal included.
   const hoursByTech = {};
   const billableHoursByTech = {};
   const nonBillableHoursByTech = {};
+  const projectHoursByTech = {};
+  const internalHoursByTech = {};
   const entryCountByTech = {};
+  const workTypesByTech = {};
 
-  teSource.forEach(te => {
+  periodEntriesAll.forEach(te => {
     if (!resourceMap[te.resourceID]) return;
     const name = resourceMap[te.resourceID];
     const hours = te.hoursWorked || 0;
+    const internal = isInternalEntry(te);
+
+    if (internal) {
+      internalHoursByTech[name] = (internalHoursByTech[name] || 0) + hours;
+    }
+
+    const wt = workTypeLabel(te.billingCodeID);
+    if (!workTypesByTech[name]) workTypesByTech[name] = {};
+    if (!workTypesByTech[name][wt]) {
+      workTypesByTech[name][wt] = { hours: 0, billable: 0, nonBillable: 0, internalHours: 0 };
+    }
+    const w = workTypesByTech[name][wt];
+    w.hours += hours;
+    if (te.isNonBillable) w.nonBillable += hours; else w.billable += hours;
+    if (internal) w.internalHours += hours;
+
+    if (!countsInTotals(te)) return;
+
     hoursByTech[name] = (hoursByTech[name] || 0) + hours;
     entryCountByTech[name] = (entryCountByTech[name] || 0) + 1;
     if (te.isNonBillable) {
@@ -359,53 +514,90 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
     } else {
       billableHoursByTech[name] = (billableHoursByTech[name] || 0) + hours;
     }
+    if (isProjectEntry(te)) {
+      projectHoursByTech[name] = (projectHoursByTech[name] || 0) + hours;
+    }
   });
 
-  const hoursByTechList = Object.entries(hoursByTech)
-    .map(([name, hours]) => ({
-      name,
-      hours: parseFloat(hours.toFixed(1)),
-      billable: parseFloat((billableHoursByTech[name] || 0).toFixed(1)),
-      nonBillable: parseFloat((nonBillableHoursByTech[name] || 0).toFixed(1)),
-      entries: entryCountByTech[name] || 0,
-      billablePct: hours > 0
-        ? Math.round(((billableHoursByTech[name] || 0) / hours) * 100)
-        : 0
-    }))
+  const techNames = new Set([...Object.keys(hoursByTech), ...Object.keys(internalHoursByTech)]);
+
+  const hoursByTechList = [...techNames]
+    .map(name => {
+      const hours = hoursByTech[name] || 0;
+      const projectHours = projectHoursByTech[name] || 0;
+      const internalHours = internalHoursByTech[name] || 0;
+      const countedInternal = INCLUDE_INTERNAL_IN_TOTALS ? internalHours : 0;
+      const workTypes = Object.entries(workTypesByTech[name] || {})
+        .map(([label, d]) => ({
+          label,
+          hours: round1(d.hours),
+          billable: round1(d.billable),
+          nonBillable: round1(d.nonBillable),
+          // true when this work type is internal time (all or mostly)
+          internal: d.internalHours > d.hours / 2
+        }))
+        .sort((a, b) => b.hours - a.hours);
+      return {
+        name,
+        hours: round1(hours),
+        billable: round1(billableHoursByTech[name] || 0),
+        nonBillable: round1(nonBillableHoursByTech[name] || 0),
+        projectHours: round1(projectHours),
+        ticketHours: round1(hours - projectHours - countedInternal),
+        internalHours: round1(internalHours),
+        allHours: round1(hours + (INCLUDE_INTERNAL_IN_TOTALS ? 0 : internalHours)),
+        entries: entryCountByTech[name] || 0,
+        billablePct: hours > 0
+          ? Math.round(((billableHoursByTech[name] || 0) / hours) * 100)
+          : 0,
+        // null = no prior-year comparison possible; 0 = had no hours last year
+        priorHours: priorYear?.available ? (priorYear.byTech[name]?.hours ?? 0) : null,
+        workTypes
+      };
+    })
     .sort((a, b) => b.hours - a.hours);
 
-  const totalHours = parseFloat(
-    teSource.reduce((s, te) => s + (te.hoursWorked || 0), 0).toFixed(1)
+  const totalHours = round1(teSource.reduce((s, te) => s + (te.hoursWorked || 0), 0));
+  const totalBillableHours = round1(
+    teSource.filter(te => !te.isNonBillable).reduce((s, te) => s + (te.hoursWorked || 0), 0)
   );
-  const totalBillableHours = parseFloat(
-    teSource.filter(te => !te.isNonBillable)
-      .reduce((s, te) => s + (te.hoursWorked || 0), 0).toFixed(1)
+  const totalNonBillableHours = round1(
+    teSource.filter(te => te.isNonBillable).reduce((s, te) => s + (te.hoursWorked || 0), 0)
   );
-  const totalNonBillableHours = parseFloat(
-    teSource.filter(te => te.isNonBillable)
-      .reduce((s, te) => s + (te.hoursWorked || 0), 0).toFixed(1)
+  const totalProjectHours = round1(
+    teSource.filter(isProjectEntry).reduce((s, te) => s + (te.hoursWorked || 0), 0)
   );
   const overallBillablePct = totalHours > 0
     ? Math.round((totalBillableHours / totalHours) * 100)
     : 0;
 
-  const entriesWithNotes = teSource.filter(
-    te => (te.summaryNotes && te.summaryNotes.trim().length > 0) ||
-          (te.internalNotes && te.internalNotes.trim().length > 0)
-  ).length;
+  const entriesWithNotes = teSource.filter(entryHasNotes).length;
   const notesCoverage = teSource.length > 0
     ? Math.round((entriesWithNotes / teSource.length) * 100)
     : 0;
 
+  // Hours by issue type — project time gets its own "Project Work" row with
+  // one sub-row per project, so this list adds up to the total hours.
+  const PROJECT_LABEL = 'Project Work';
   const hoursByIssue = {};
   teSource.forEach(te => {
-    const ticket = ticketMap[te.ticketID];
-    if (!ticket) return;
     const hours = te.hoursWorked || 0;
-    const issueKey = String(ticket.issueType || '');
-    const subIssueKey = String(ticket.subIssueType || '');
-    const issueLabel = issueTypeMap[issueKey] || 'Uncategorized';
-    const subIssueLabel = subIssueMap[subIssueKey]?.label || null;
+    let issueLabel, subIssueLabel;
+
+    if (isInternalEntry(te)) {
+      issueLabel = 'Internal Time';
+      subIssueLabel = workTypeLabel(te.billingCodeID);
+    } else if (isProjectEntry(te)) {
+      issueLabel = PROJECT_LABEL;
+      subIssueLabel = te.projectName || 'Unknown project';
+    } else {
+      const ticket = ticketMap[te.ticketID];
+      if (!ticket) return;
+      const issueKey = String(ticket.issueType || '');
+      const subIssueKey = String(ticket.subIssueType || '');
+      issueLabel = issueTypeMap[issueKey] || 'Uncategorized';
+      subIssueLabel = subIssueMap[subIssueKey]?.label || null;
+    }
 
     if (!hoursByIssue[issueLabel]) {
       hoursByIssue[issueLabel] = { hours: 0, subIssues: {} };
@@ -423,11 +615,11 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
   const hoursByIssueList = Object.entries(hoursByIssue)
     .map(([label, data]) => ({
       label,
-      hours: parseFloat(data.hours.toFixed(1)),
+      hours: round1(data.hours),
       subIssues: Object.entries(data.subIssues)
         .map(([subLabel, hours]) => ({
           label: subLabel,
-          hours: parseFloat(hours.toFixed(1))
+          hours: round1(hours)
         }))
         .sort((a, b) => b.hours - a.hours)
     }))
@@ -435,24 +627,37 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
 
   const hoursByCompanyRaw = {};
   teSource.forEach(te => {
-    const ticket = ticketMap[te.ticketID];
-    const company = (companyMap && ticket && companyMap[String(ticket.companyID)]) || 'Unknown';
     const hours = te.hoursWorked || 0;
+    let company, subLabel = null;
+
+    if (isInternalEntry(te)) {
+      company = (companyMap && companyMap['0']) || 'InfoTank (Internal)';
+      subLabel = 'Internal Time';
+    } else if (isProjectEntry(te)) {
+      company = (companyMap && te.projectCompanyID != null && companyMap[String(te.projectCompanyID)]) || 'Unknown';
+      subLabel = PROJECT_LABEL;
+    } else {
+      const ticket = ticketMap[te.ticketID];
+      company = (companyMap && ticket && companyMap[String(ticket.companyID)]) || 'Unknown';
+      if (ticket?.issueType) {
+        subLabel = issueTypeMap[String(ticket.issueType)] || `Type ${ticket.issueType}`;
+      }
+    }
+
     if (!hoursByCompanyRaw[company]) hoursByCompanyRaw[company] = { hours: 0, issueTypes: {} };
     hoursByCompanyRaw[company].hours += hours;
-    if (ticket?.issueType) {
-      const label = issueTypeMap[String(ticket.issueType)] || `Type ${ticket.issueType}`;
-      hoursByCompanyRaw[company].issueTypes[label] =
-        (hoursByCompanyRaw[company].issueTypes[label] || 0) + hours;
+    if (subLabel) {
+      hoursByCompanyRaw[company].issueTypes[subLabel] =
+        (hoursByCompanyRaw[company].issueTypes[subLabel] || 0) + hours;
     }
   });
 
   const hoursByCompanyList = Object.entries(hoursByCompanyRaw)
     .map(([name, data]) => ({
       name,
-      hours: parseFloat(data.hours.toFixed(1)),
+      hours: round1(data.hours),
       issueTypes: Object.entries(data.issueTypes)
-        .map(([label, hours]) => ({ label, hours: parseFloat(hours.toFixed(1)) }))
+        .map(([label, hours]) => ({ label, hours: round1(hours) }))
         .sort((a, b) => b.hours - a.hours)
     }))
     .sort((a, b) => b.hours - a.hours);
@@ -508,9 +713,11 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
   const TIER2_3_IDS = new Set([29682910, 29682889, 29682904, 29682899, 29682944]);
 
   const gradeTicketSource = selectedQTickets.length > 0 ? selectedQTickets : allTickets;
+  // Grading is about ticket work only — project and internal time are
+  // excluded so adding them to the Time Analytics tab doesn't change grades.
   const gradeTeSource = filterTimeEntries(
-    selectedQTimeEntries.length > 0 ? selectedQTimeEntries : (timeEntries || [])
-  );
+    selectedQuarterKey ? selectedQTimeEntries : (timeEntries || [])
+  ).filter(te => entryKind(te) === 'ticket');
 
   const gradeTechIds = Object.keys(resourceMap).map(Number);
 
@@ -711,10 +918,8 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
       }
     }
     if (notesMethod === 'entries') {
-      const entriesWithNotes = t.timeEntries.filter(
-        te => (te.summaryNotes?.trim().length > 0) || (te.internalNotes?.trim().length > 0)
-      ).length;
-      notesPct = t.timeEntries.length > 0 ? entriesWithNotes / t.timeEntries.length : 0;
+      const entriesWithNotesTech = t.timeEntries.filter(entryHasNotes).length;
+      notesPct = t.timeEntries.length > 0 ? entriesWithNotesTech / t.timeEntries.length : 0;
     }
     notesScore = W.notes * notesPct;
 
@@ -849,12 +1054,20 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
       totalHours,
       totalBillableHours,
       totalNonBillableHours,
+      totalProjectHours,
+      totalInternalHours,
+      internalCountedInTotals: INCLUDE_INTERNAL_IN_TOTALS,
       overallBillablePct,
       notesCoverage,
       hoursByTechList,
       hoursByIssueList,
       hoursByCompanyList,
-      entryCount: teSource.length
+      entryCount: teSource.length,
+      priorYear,
+      isCurrentQuarter,
+      selectedQCoverage,
+      coverageStart: coverageStart ? coverageStart.toISOString() : null,
+      projectTimeError: cacheInfo?.projectTimeError || null
     },
     staffing: {
       trailing12: {

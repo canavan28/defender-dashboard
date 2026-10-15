@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { createApi } from '../utils/api';
 import { getQuarterKey } from './useTicketMetrics';
 
@@ -11,7 +11,9 @@ export function useDashboard(getToken) {
   const [selectedQuarterKey, setSelectedQuarterKey] = useState(null);
   const pollRef = useRef(null);
 
-  const api = createApi(getToken);
+  // FIX: memoized so this hook doesn't create a brand-new api object on every
+  // render — same bug class as the runaway re-render loop fixed in App.jsx.
+  const api = useMemo(() => createApi(getToken), [getToken]);
 
   const processResponse = (response) => {
     setRawData({
@@ -24,6 +26,7 @@ export function useDashboard(getToken) {
       issueTypeMap: response.issueTypeMap || {},
       subIssueMap: response.subIssueMap || {},
       companyMap: response.companyMap || {},
+      billingCodeMap: response.billingCodeMap || {},
       cacheInfo: response.cacheInfo
     });
     setSelectedQuarterKey(prev => prev || getQuarterKey(new Date()));
@@ -41,7 +44,7 @@ export function useDashboard(getToken) {
     } finally {
       setLoading(false);
     }
-  }, [getToken]);
+  }, [api]);
 
   const stopPolling = () => {
     if (pollRef.current) {
@@ -109,7 +112,7 @@ export function useDashboard(getToken) {
       setFullRefreshStep(null);
       setError(err.message);
     }
-  }, [getToken, rawData]);
+  }, [api, rawData]);
 
   return {
     rawData, loading, fullRefreshStep, error,
