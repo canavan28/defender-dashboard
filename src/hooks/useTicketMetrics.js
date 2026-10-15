@@ -138,11 +138,13 @@ const entryKind = (te) => {
 const isProjectEntry = (te) => entryKind(te) === 'project';
 const isInternalEntry = (te) => entryKind(te) === 'internal';
 
-// Internal time is ~26% of all hours. It is NOT counted in total hours,
-// billable %, the issue/company views or the year-over-year comparison, so
-// those keep measuring client + project work. It IS shown in each engineer's
-// drill-down. Flip to true to count internal time everywhere.
-const INCLUDE_INTERNAL_IN_TOTALS = false;
+// Internal time (~26% of all hours) IS counted everywhere on Time Analytics:
+// total hours, billable %, notes coverage, the issue view (its own "Internal
+// Time" row), the company view (under InfoTank (Internal)) and the
+// year-over-year comparison. Decided by Matt. Tech grading is unaffected —
+// it uses ticket time only. Set to false to show internal time only in the
+// engineer drill-down and leave it out of every total.
+const INCLUDE_INTERNAL_IN_TOTALS = true;
 const countsInTotals = (te) => INCLUDE_INTERNAL_IN_TOTALS || !isInternalEntry(te);
 
 // Backend now sends a hasNotes flag instead of the note text. Falls back to
