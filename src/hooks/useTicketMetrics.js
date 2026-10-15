@@ -123,6 +123,62 @@ function businessMinutesBetween(startMs, endMs) {
   return Math.round(total);
 }
 
+// ── Workday capacity (8h per workday) ────────────────────────────────────────
+// Workdays = Mon–Fri minus InfoTank's actual days off (confirmed by Matt):
+// the federal holidays EXCEPT Columbus Day and Veterans Day (InfoTank works
+// both), PLUS the day after Thanksgiving (InfoTank is closed).
+// Holidays that fall on a weekend use the observed weekday.
+// Note: the business-hours calendar above (response-time scoring) still uses
+// its original list, which treats Columbus Day and Veterans Day as days off.
+const HOURS_PER_WORKDAY = 8;
+const _companyHolCache = {};
+function _companyHolidays(year) {
+  if (_companyHolCache[year]) return _companyHolCache[year];
+  // Starts from the business-hours list (federal holidays + day after Thanksgiving)
+  const set = new Set(_getFederalHolidays(year));
+
+  // Remove Columbus Day (2nd Monday of October)
+  let mondays = 0;
+  for (let d = 1; d <= 31; d++) {
+    if (new Date(year, 9, d).getDay() === 1 && ++mondays === 2) {
+      set.delete(`${year}-10-${d}`);
+      break;
+    }
+  }
+
+  // Remove Veterans Day (Nov 11, or its observed Friday/Monday)
+  const vd = new Date(year, 10, 11);
+  if (vd.getDay() === 6) vd.setDate(10);
+  else if (vd.getDay() === 0) vd.setDate(12);
+  set.delete(`${year}-11-${vd.getDate()}`);
+
+  _companyHolCache[year] = set;
+  return set;
+}
+
+function _isCompanyHoliday(dt) {
+  const key = `${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`;
+  // A holiday's observed date can land in the neighbouring year
+  // (e.g. Jan 1 on a Saturday is observed Dec 31), so check both sides.
+  const y = dt.getFullYear();
+  return _companyHolidays(y).has(key) ||
+         _companyHolidays(y + 1).has(key) ||
+         _companyHolidays(y - 1).has(key);
+}
+
+// Counts workdays from start to end, both dates included
+export function countWorkdays(start, end) {
+  const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  let n = 0;
+  while (cur <= last) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6 && !_isCompanyHoliday(cur)) n++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return n;
+}
+
 // ── Small helpers ─────────────────────────────────────────────────────────────
 const round1 = (n) => parseFloat((n || 0).toFixed(1));
 
@@ -475,6 +531,22 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
     } else {
       priorYear = { available: false, label, byTech: {} };
     }
+  }
+
+  // ── Capacity marker: 8h × workdays in the selected quarter ───────────────
+  // For the current, in-progress quarter it counts workdays through today,
+  // so the marker shows where a full-time engineer should be by now.
+  let capacity = null;
+  if (selectedQStart && selectedQEnd) {
+    const through = isCurrentQuarter && now < selectedQEnd ? now : selectedQEnd;
+    const workdays = countWorkdays(selectedQStart, through);
+    capacity = {
+      workdays,
+      hours: workdays * HOURS_PER_WORKDAY,
+      hoursPerDay: HOURS_PER_WORKDAY,
+      isQTD: isCurrentQuarter && now < selectedQEnd,
+      throughLabel: `${through.toLocaleString('en-US', { month: 'short' })} ${through.getDate()}`
+    };
   }
 
   // Hours by tech. The bar/hours/billable % use counted time only; the
@@ -1059,6 +1131,7 @@ function computeTicketMetrics(rawData, selectedQuarterKey) {
       totalProjectHours,
       totalInternalHours,
       internalCountedInTotals: INCLUDE_INTERNAL_IN_TOTALS,
+      capacity,
       overallBillablePct,
       notesCoverage,
       hoursByTechList,
