@@ -1,8 +1,9 @@
 // Engineering standup — a single scrollable screen meant to run
 // unattended on a TV/wall display, refreshed hourly (see useStandup.js)
 // plus a manual refresh button. All data comes from GET /api/standup/data,
-// which computes everything live on each request (no disk cache of its
-// own — see standup.js for why).
+// which now pulls open tickets live from AutoTask on every request (it used
+// to read the shared ticket cache, which is why "Refresh now" never showed
+// new tickets — see standup.js).
 
 import { useState } from 'react';
 
@@ -11,14 +12,13 @@ import { useState } from 'react';
 // engineer meeting needs). Lists arrive from the backend already sorted
 // worst-first, so "first N" means "worst N".
 const DRAGGING_CAP = 10;
-const AI_CAP = 5;
 
-const SEV_COLORS = {
-  critical: { fg: 'var(--red)', bg: 'var(--red-soft)' },
-  high: { fg: 'var(--red)', bg: 'var(--red-soft)' },
-  medium: { fg: '#92600a', bg: '#fef3c7' }, // amber, no --amber-soft token exists yet
-  low: { fg: 'var(--ink3)', bg: '#f1f5f9' }
-};
+// Opens the ticket in AutoTask (zone ww14). Only ticketId is needed — the
+// extra ids[] parameters AutoTask adds to its own URLs are just its
+// next/previous navigation list.
+function autotaskTicketUrl(ticketId) {
+  return `https://ww14.autotask.net/Mvc/ServiceDesk/TicketDetail.mvc/Index?ticketId=${ticketId}`;
+}
 
 // Task-based progress ("% Complete - Tasks" in AutoTask), e.g. "3 of 40
 // tasks (8%)". null means the project has no tasks or the task fetch
@@ -75,7 +75,16 @@ function TicketRow({ t, rightContent, showStatus }) {
     }}>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)' }}>{t.ticketNumber}</span>
+          <a
+            href={autotaskTicketUrl(t.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="it-mono"
+            title="Open in AutoTask"
+            style={{ fontSize: 11.5, color: 'var(--blue)', textDecoration: 'underline' }}
+          >
+            {t.ticketNumber}
+          </a>
           <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>{t.title}</span>
         </div>
         <p style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 2 }}>
@@ -138,57 +147,6 @@ function DraggingSection({ tickets }) {
         cap={DRAGGING_CAP}
         onToggle={() => setShowAll(v => !v)}
       />
-    </div>
-  );
-}
-
-function AIEscalationsSection({ flags, otherCount }) {
-  // The backend already limits this to high + critical flagged in the last
-  // 7 days, drops flags with no ticket number, and groups repeated alerts
-  // (similarCount = how many other flags the shown one stands in for).
-  const [showAll, setShowAll] = useState(false);
-  const visible = showAll ? flags : flags.slice(0, AI_CAP);
-  return (
-    <div className="it-card" style={{ padding: 20, marginBottom: 20 }}>
-      <SectionHeader eyebrow="High & critical, last 7 days" title="AI Review Escalations" count={flags.length} />
-      {flags.length === 0 && <EmptyRow>No high or critical AI escalations in the last 7 days.</EmptyRow>}
-      {visible.map(f => {
-        const colors = SEV_COLORS[f.sev] || SEV_COLORS.low;
-        return (
-          <div key={f.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-              <span className="it-mono" style={{
-                fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 999,
-                background: colors.bg, color: colors.fg, textTransform: 'uppercase'
-              }}>
-                {f.sev}
-              </span>
-              <span className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)' }}>{f.id}</span>
-              <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>{f.title}</span>
-              {f.similarCount > 0 && (
-                <span className="it-mono" style={{ fontSize: 10.5, color: 'var(--ink4)' }}>
-                  +{f.similarCount} similar
-                </span>
-              )}
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 3 }}>{f.summary}</p>
-            <p style={{ fontSize: 11.5, color: 'var(--ink4)', marginTop: 2 }}>
-              {f.company} &middot; {f.tech || 'Unassigned'}
-            </p>
-          </div>
-        );
-      })}
-      <ShowMoreButton
-        showAll={showAll}
-        total={flags.length}
-        cap={AI_CAP}
-        onToggle={() => setShowAll(v => !v)}
-      />
-      {otherCount > 0 && (
-        <p className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)', marginTop: 10 }}>
-          {otherCount} lower-severity flag{otherCount === 1 ? '' : 's'} not shown &mdash; see the AI Review tab.
-        </p>
-      )}
     </div>
   );
 }
@@ -440,7 +398,6 @@ export function Standup({ standup }) {
       <EngineeringProjectsSection projects={data.engineeringProjects} />
       <OnboardingOverdueSection projects={data.onboardingOverdue} />
       <DraggingSection tickets={data.draggingTickets} />
-      <AIEscalationsSection flags={data.aiEscalations} otherCount={data.aiEscalationsOtherCount || 0} />
     </div>
   );
 }

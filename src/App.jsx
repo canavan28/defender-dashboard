@@ -6,8 +6,6 @@ import { TechCapacity } from './modules/TechCapacity';
 import { TimeAnalytics } from './modules/TimeAnalytics';
 import { SLAHealth } from './modules/SLAHealth';
 import { StaffingSignals } from './modules/StaffingSignals';
-import { AIReview } from './modules/AIReview';
-import { ActionItems } from './modules/ActionItems';
 import { VTOTab } from './modules/VTO';
 import { TeamRocksTab } from './modules/TeamRocks';
 import { InsideSales } from './modules/InsideSales';
@@ -17,7 +15,6 @@ import { Standup } from './modules/Standup';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
 import { useAuth } from './hooks/useAuth';
-import { useAIReview } from './hooks/useAIReview';
 import { useUpsells } from './hooks/useUpsells';
 import { useCustomerSuccess } from './hooks/useCustomerSuccess';
 import { useLicenseAudit } from './hooks/useLicenseAudit';
@@ -43,13 +40,10 @@ export default function App() {
   } = useDashboard(getToken);
 
   const metrics = useTicketMetrics(rawData, selectedQuarterKey);
-  const aiReview = useAIReview(api);
   const upsells = useUpsells(api);
   const cs = useCustomerSuccess(getToken);
   const licenseAudit = useLicenseAudit(getToken);
   const standup = useStandup(api);
-
-  const [aiFilter, setAiFilter] = useState(null);
 
   // Access info from /api/me: fails closed (only 'operations', no owner
   // access) until positively confirmed, same defensive pattern the old
@@ -124,7 +118,6 @@ export default function App() {
   const goHome = () => {
     setActiveCategory(access.defaultCategory);
     setActiveTab(access.defaultTab || firstTabOf(access.defaultCategory));
-    setAiFilter(null);
   };
 
   const startPreview = async (oid) => {
@@ -142,8 +135,7 @@ export default function App() {
       setPreviewOid(oid);
       setActiveCategory(resolved.defaultCategory);
       setActiveTab(resolved.defaultTab || firstTabOf(resolved.defaultCategory));
-      setAiFilter(null);
-    } catch (err) {
+      } catch (err) {
       console.error('[Preview] Failed to load preview access:', err.message);
     }
   };
@@ -154,32 +146,15 @@ export default function App() {
     setPreviewOid(null);
     setActiveCategory(realAccess.defaultCategory);
     setActiveTab(realAccess.defaultTab || firstTabOf(realAccess.defaultCategory));
-    setAiFilter(null);
   };
 
   const handleChangeCategory = (categoryId) => {
     setActiveCategory(categoryId);
     setActiveTab(firstTabOf(categoryId));
-    setAiFilter(null);
   };
 
   const handleChangeTab = (tabId) => {
     setActiveTab(tabId);
-    if (tabId !== 'AI Review') setAiFilter(null);
-  };
-
-  const unactionedCount = aiReview.flags.filter(f => f.action === 'unactioned').length;
-  const criticalUnactionedCount = aiReview.flags.filter(
-    f => f.action === 'unactioned' && f.sev === 'critical'
-  ).length;
-  const actionItemsCount = aiReview.flags.filter(
-    f => f.action === 'escalated' || f.action === 'assigned'
-  ).length;
-
-  const handleCriticalFlagsClick = () => {
-    setAiFilter('critical');
-    setActiveCategory('operations');
-    setActiveTab('AI Review');
   };
 
   if (authLoading) {
@@ -295,8 +270,6 @@ export default function App() {
           activeTab={activeTab}
           onChangeCategory={handleChangeCategory}
           onChangeTab={handleChangeTab}
-          aiUnactionedCount={unactionedCount}
-          actionItemsCount={actionItemsCount}
         />
       )}
 
@@ -341,8 +314,6 @@ export default function App() {
                 metrics={metrics}
                 selectedQuarterKey={selectedQuarterKey}
                 onSelectQuarter={setSelectedQuarterKey}
-                criticalFlagsCount={criticalUnactionedCount}
-                onCriticalFlagsClick={handleCriticalFlagsClick}
               />
             )}
             {activeTab === 'Tech capacity' && (
@@ -350,7 +321,6 @@ export default function App() {
                 metrics={metrics}
                 selectedQuarterKey={selectedQuarterKey}
                 onSelectQuarter={setSelectedQuarterKey}
-                aiReview={aiReview}
               />
             )}
             {activeTab === 'Time analytics' && (
@@ -376,14 +346,6 @@ export default function App() {
               />
             )}
           </>
-        )}
-
-        {activeTab === 'AI Review' && (
-          <AIReview aiReview={aiReview} initialSevFilter={aiFilter} syncInProgress={loading} />
-        )}
-
-        {activeTab === 'Action Items' && (
-          <ActionItems aiReview={aiReview} />
         )}
 
         {activeTab === 'Team Rocks' && (

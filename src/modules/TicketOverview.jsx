@@ -4,7 +4,7 @@ import { QuarterSelector } from '../components/QuarterSelector';
 
 const COLORS = ['#2563eb', '#e09a3a', '#16a34a', '#dc2626', '#9b72f7', '#f76f4f', '#4fd4c4', '#f7c94f'];
 
-export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, criticalFlagsCount = 0, onCriticalFlagsClick }) {
+export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter }) {
   if (!metrics) return null;
   const {
     ytd, quarterlyTrend,
@@ -67,8 +67,9 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* KPI row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+      {/* KPI row — was 4 cards; the "Critical AI flags" card was removed
+          along with AI Review in the Phase 1 cleanup */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
 
         {/* YTD card */}
         <div className="it-card" style={{ padding: '18px 20px 16px' }}>
@@ -127,35 +128,6 @@ export function TicketOverview({ metrics, selectedQuarterKey, onSelectQuarter, c
           ) : (
             <div style={{ marginTop: 6, fontSize: 13, color: 'var(--ink3)' }}>Select a quarter below</div>
           )}
-        </div>
-
-        {/* Critical flags */}
-        <div
-          className="it-card"
-          onClick={onCriticalFlagsClick}
-          style={{
-            padding: '18px 20px 16px',
-            cursor: criticalFlagsCount > 0 ? 'pointer' : 'default',
-            transition: 'box-shadow 0.15s',
-            ...(criticalFlagsCount > 0 ? {
-              borderColor: '#fecaca',
-              boxShadow: '0 0 0 1px #fecaca'
-            } : {})
-          }}
-          onMouseEnter={e => { if (criticalFlagsCount > 0) e.currentTarget.style.boxShadow = '0 4px 12px rgba(220,38,38,0.15)'; }}
-          onMouseLeave={e => { if (criticalFlagsCount > 0) e.currentTarget.style.boxShadow = '0 0 0 1px #fecaca'; }}
-        >
-          <div className="it-eyebrow">Critical AI flags</div>
-          <div style={{
-            fontSize: 30, fontWeight: 500, lineHeight: 1.05,
-            letterSpacing: '-0.02em', marginTop: 6,
-            color: criticalFlagsCount > 0 ? 'var(--red)' : 'var(--ink)'
-          }}>
-            {criticalFlagsCount}
-          </div>
-          <div style={{ marginTop: 8, fontSize: 12.5, color: criticalFlagsCount > 0 ? 'var(--red)' : 'var(--ink3)' }}>
-            {criticalFlagsCount > 0 ? 'Click to review →' : 'No critical flags'}
-          </div>
         </div>
 
         {/* SLA breach rate */}
