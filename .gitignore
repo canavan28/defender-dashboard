@@ -1,3 +1,8 @@
 node_modules/
 dist/
 .env
+
+# Test/diagnostic output (curl -o results etc.) — never commit these.
+/*.json
+!/package.json
+!/package-lock.json
