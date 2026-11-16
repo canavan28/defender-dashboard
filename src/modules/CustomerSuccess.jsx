@@ -14,6 +14,82 @@ const SYSTEM_EVENT_LABELS = {
   autotask_review: 'AutoTask survey'
 };
 
+// Same AutoTask link format the Standup uses (zone ww14).
+function autotaskTicketUrl(ticketId) {
+  return `https://ww14.autotask.net/Mvc/ServiceDesk/TicketDetail.mvc/Index?ticketId=${ticketId}`;
+}
+
+// Scores can now carry quarter points (breaches are -0.25) and fractional
+// survey points, so trim to at most 2 decimals for display.
+function fmt(n) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return String(Math.round(n * 100) / 100);
+}
+
+function signed(n) {
+  return `${n > 0 ? '+' : ''}${fmt(n)}`;
+}
+
+function BreakdownRow({ label, detail, value, muted }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+      padding: '5px 0', borderBottom: '1px solid var(--border)'
+    }}>
+      <div>
+        <span style={{ fontSize: 13, color: muted ? 'var(--ink3)' : 'var(--ink)' }}>{label}</span>
+        {detail && (
+          <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginLeft: 8 }}>{detail}</span>
+        )}
+      </div>
+      <span className="it-mono" style={{
+        fontSize: 12.5, fontWeight: 600,
+        color: value < 0 ? 'var(--red)' : value > 0 ? 'var(--green)' : 'var(--ink3)'
+      }}>
+        {signed(value)}
+      </span>
+    </div>
+  );
+}
+
+// How the score was built: base + breaches + surveys (capped) + manual.
+// Needed because the survey cap means the event list no longer simply
+// adds up to the score.
+function ScoreBreakdown({ client }) {
+  const b = client.breakdown;
+  const r = client.rules || {};
+  if (!b) return null;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div className="it-eyebrow" style={{ marginBottom: 6 }}>How this score is built · last {r.windowMonths || 12} months</div>
+      <BreakdownRow label="Starting score" value={b.base} muted />
+      <BreakdownRow
+        label="SLA breaches"
+        detail={`${b.breaches} × ${fmt(r.breachDelta ?? -0.25)}`}
+        value={b.breachPoints}
+      />
+      <BreakdownRow
+        label="AutoTask surveys"
+        detail={b.surveyCapApplied
+          ? `${b.surveys} surveys · ${signed(b.surveyPointsRaw)} earned, positives capped at +${r.surveyPositiveCap ?? 10}`
+          : `${b.surveys} survey${b.surveys === 1 ? '' : 's'}`}
+        value={b.surveyPointsCounted}
+      />
+      <BreakdownRow
+        label="Manual entries"
+        detail={`${b.manualCounted} counted${b.manualExpired ? ` · ${b.manualExpired} expired` : ''}`}
+        value={b.manualPoints}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0 0' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Score</span>
+        <span className="it-mono" style={{ fontSize: 13, fontWeight: 700, color: scoreColor(client.score) }}>
+          {fmt(client.score)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function scoreColor(score) {
   return score < CS_SCORE_THRESHOLD ? 'var(--red)' : 'var(--green)';
 }
@@ -122,7 +198,9 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div className="it-section-title">Customer Success</div>
-          <div className="it-section-sub">Scores start at 10 · below {CS_SCORE_THRESHOLD} is flagged</div>
+          <div className="it-section-sub">
+            Scores start at 10 · rolling 12 months · SLA breach −0.25 · positive surveys capped at +10 · below {CS_SCORE_THRESHOLD} is flagged
+          </div>
         </div>
         <button
           onClick={runSync}
@@ -229,11 +307,18 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
                   cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit'
                 }}
               >
-                <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>
-                  {resolveName(c.companyId, c.companyName)}
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>
+                    {resolveName(c.companyId, c.companyName)}
+                  </span>
+                  {(c.breaches > 0 || c.surveys > 0) && (
+                    <span className="it-mono" style={{ fontSize: 11, color: 'var(--ink4)', marginLeft: 8 }}>
+                      {c.breaches || 0} breach{c.breaches === 1 ? '' : 'es'} · {c.surveys || 0} survey{c.surveys === 1 ? '' : 's'}
+                    </span>
+                  )}
                 </span>
                 <span className="it-mono" style={{ fontSize: 13, fontWeight: 600, color: scoreColor(c.score) }}>
-                  {c.score}
+                  {fmt(c.score)}
                 </span>
               </button>
             ))}
@@ -249,7 +334,7 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
                 </div>
                 <div className="it-section-sub">
                   Score: <span style={{ color: client ? scoreColor(client.score) : 'var(--ink3)', fontWeight: 600 }}>
-                    {client?.score ?? '—'}
+                    {client ? fmt(client.score) : '—'}
                   </span>
                 </div>
               </div>
@@ -268,6 +353,8 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
 
             {client && (
               <>
+                <ScoreBreakdown client={client} />
+
                 <div style={{ marginBottom: 16 }}>
                   <label className="it-eyebrow" style={{ display: 'block', marginBottom: 4 }}>
                     Company name
@@ -292,18 +379,37 @@ export function CustomerSuccess({ cs, companyMap = {} }) {
                   {[...client.events].reverse().map(evt => (
                     <div key={evt.id} style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                      padding: '8px 0', borderBottom: '1px solid var(--border)'
+                      padding: '8px 0', borderBottom: '1px solid var(--border)',
+                      // Older than 12 months: kept for history, no longer counts
+                      opacity: evt.counts === false ? 0.5 : 1
                     }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, color: 'var(--ink)' }}>
                           {formatEventLabel(evt)}
                           <span className="it-mono" style={{ marginLeft: 8, fontSize: 12, color: evt.delta < 0 ? 'var(--red)' : 'var(--green)' }}>
-                            {evt.delta > 0 ? '+' : ''}{evt.delta}
+                            {signed(evt.delta)}
                           </span>
+                          {evt.counts === false && (
+                            <span className="it-mono" style={{ marginLeft: 8, fontSize: 10.5, color: 'var(--ink4)' }}>
+                              expired · no longer counts
+                            </span>
+                          )}
                         </div>
                         {evt.source?.ticketNumber && (
                           <div className="it-mono" style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>
-                            Ticket #{evt.source.ticketNumber}
+                            Ticket{' '}
+                            {evt.source.ticketId ? (
+                              <a
+                                href={autotaskTicketUrl(evt.source.ticketId)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Open in AutoTask"
+                                style={{ color: 'var(--blue)', textDecoration: 'underline' }}
+                              >
+                                {evt.source.ticketNumber}
+                              </a>
+                            ) : evt.source.ticketNumber}
+                            {evt.source.queue && <> &middot; {evt.source.queue}</>}
                           </div>
                         )}
                         {evt.note && (

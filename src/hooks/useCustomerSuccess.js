@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { createApi } from '../utils/api';
 
 // Below this score, a client is considered flagged (matches the confirmed
@@ -14,7 +14,9 @@ export function useCustomerSuccess(getToken) {
   const [syncErrors, setSyncErrors] = useState([]);
   const [error, setError] = useState(null);
 
-  const api = createApi(getToken);
+  // Memoized — an api object rebuilt on every render is the same bug class
+  // as the runaway re-render loop fixed earlier in App.jsx.
+  const api = useMemo(() => createApi(getToken), [getToken]);
 
   const loadScores = useCallback(async () => {
     setLoading(true);
@@ -27,7 +29,7 @@ export function useCustomerSuccess(getToken) {
     } finally {
       setLoading(false);
     }
-  }, [getToken]);
+  }, [api]);
 
   const openClient = useCallback(async (companyId) => {
     setLoading(true);
@@ -40,7 +42,7 @@ export function useCustomerSuccess(getToken) {
     } finally {
       setLoading(false);
     }
-  }, [getToken]);
+  }, [api]);
 
   const closeClient = useCallback(() => setClient(null), []);
 
@@ -58,6 +60,8 @@ export function useCustomerSuccess(getToken) {
           companyId: updated.companyId,
           companyName: updated.companyName,
           score: updated.score,
+          breaches: updated.breakdown?.breaches ?? 0,
+          surveys: updated.breakdown?.surveys ?? 0,
           eventCount: updated.events.length
         };
         if (idx === -1) return [...prev, row];
@@ -72,7 +76,7 @@ export function useCustomerSuccess(getToken) {
     } finally {
       setSaving(false);
     }
-  }, [getToken]);
+  }, [api]);
 
   const deleteEvent = useCallback(async (companyId, eventId) => {
     setSaving(true);
@@ -82,7 +86,13 @@ export function useCustomerSuccess(getToken) {
       setClient(updated);
       setScores(prev => prev.map(c =>
         c.companyId === updated.companyId
-          ? { ...c, score: updated.score, eventCount: updated.events.length }
+          ? {
+              ...c,
+              score: updated.score,
+              breaches: updated.breakdown?.breaches ?? 0,
+              surveys: updated.breakdown?.surveys ?? 0,
+              eventCount: updated.events.length
+            }
           : c
       ));
       return updated;
@@ -92,7 +102,7 @@ export function useCustomerSuccess(getToken) {
     } finally {
       setSaving(false);
     }
-  }, [getToken]);
+  }, [api]);
 
   const runSync = useCallback(async () => {
     setSyncing(true);
@@ -110,7 +120,7 @@ export function useCustomerSuccess(getToken) {
     } finally {
       setSyncing(false);
     }
-  }, [getToken, loadScores, openClient, client]);
+  }, [api, loadScores, openClient, client]);
 
   return {
     scores, client, loading, saving, syncing, syncErrors, error,
