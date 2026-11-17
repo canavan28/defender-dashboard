@@ -12,6 +12,7 @@ import { InsideSales } from './modules/InsideSales';
 import { CustomerSuccess } from './modules/CustomerSuccess';
 import { LicenseAudit } from './modules/LicenseAudit';
 import { Standup } from './modules/Standup';
+import { SeoAssistant } from './modules/SeoAssistant';
 import { useDashboard } from './hooks/useDashboard';
 import { useTicketMetrics } from './hooks/useTicketMetrics';
 import { useAuth } from './hooks/useAuth';
@@ -46,14 +47,15 @@ export default function App() {
   const standup = useStandup(api);
 
   // Access info from /api/me: fails closed (only 'operations', no owner
-  // access) until positively confirmed, same defensive pattern the old
-  // isOwner-only check used — never show anything optimistically while
-  // this is loading or if the request errors.
+  // access, no feature flags) until positively confirmed, same defensive
+  // pattern the old isOwner-only check used — never show anything
+  // optimistically while this is loading or if the request errors.
   const [access, setAccess] = useState({
     isOwner: false,
     categories: ['operations'],
     defaultCategory: 'operations',
     defaultTab: null,
+    features: {},
   });
   const [accessLoaded, setAccessLoaded] = useState(false);
   const [accessDeniedError, setAccessDeniedError] = useState(false);
@@ -84,6 +86,7 @@ export default function App() {
           categories: res.categories || ['operations'],
           defaultCategory: res.defaultCategory || 'operations',
           defaultTab: res.defaultTab || null,
+          features: res.features || {},
         };
         setAccess(resolved);
         setRealAccess(resolved);
@@ -129,6 +132,7 @@ export default function App() {
         categories: res.categories || ['operations'],
         defaultCategory: res.defaultCategory || 'operations',
         defaultTab: res.defaultTab || null,
+        features: res.features || {},
         previewName: res.name,
       };
       setAccess(resolved);
@@ -266,6 +270,7 @@ export default function App() {
         <NavTabs
           categories={access.categories}
           isOwner={access.isOwner}
+          features={access.features}
           activeCategory={activeCategory}
           activeTab={activeTab}
           onChangeCategory={handleChangeCategory}
@@ -358,6 +363,10 @@ export default function App() {
 
         {activeTab === 'Inside Sales' && (
           <InsideSales upsells={upsells} />
+        )}
+
+        {activeTab === 'SEO Assistant' && access.features?.seoAgent && (
+          <SeoAssistant getToken={getToken} />
         )}
 
         {activeTab === 'Customer Success' && (

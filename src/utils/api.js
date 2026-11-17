@@ -139,6 +139,14 @@ export function createApi(getToken) {
     },
     standup: {
       data: () => apiFetch('/api/standup/data', getToken)
+    },
+    // SEO Assistant. chat() can take 20-90 seconds (Claude calling tools).
+    seoAgent: {
+      chat:              (message, conversationId) => apiPost('/api/seo-agent/chat', { message, conversation_id: conversationId || undefined }, getToken),
+      conversations:     ()   => apiFetch('/api/seo-agent/conversations', getToken),
+      conversation:      (id) => apiFetch(`/api/seo-agent/conversations/${id}`, getToken),
+      remove:            (id) => apiDelete(`/api/seo-agent/conversations/${id}`, getToken),
+      brightlocalStatus: ()   => apiFetch('/api/seo-agent/brightlocal/status', getToken)
     }
   };
 }

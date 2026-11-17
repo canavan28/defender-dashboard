@@ -2,6 +2,11 @@
 // too, same as VTO always was); "Finance" currently has no sub-tabs yet —
 // rendered as a "coming soon" placeholder in App.jsx rather than an empty
 // tab row.
+//
+// A tab with a `feature` key only shows for people whose /api/me
+// `features` has that flag set — for tabs that don't follow category
+// access (the SEO Assistant sits under Sales but isn't for everyone with
+// Sales).
 export const CATEGORIES = [
   {
     id: 'operations',
@@ -21,6 +26,7 @@ export const CATEGORIES = [
     label: 'Sales',
     tabs: [
       { id: 'Inside Sales', label: 'Inside Sales' },
+      { id: 'SEO Assistant', label: 'SEO Assistant', feature: 'seoAgent' },
     ],
   },
   {
@@ -49,6 +55,7 @@ export const CATEGORIES = [
 export function NavTabs({
   categories,           // array of category ids the current user can see (from /api/me)
   isOwner,
+  features = {},        // per-feature flags from /api/me, e.g. { seoAgent: true }
   activeCategory,
   activeTab,
   onChangeCategory,
@@ -58,6 +65,7 @@ export function NavTabs({
     (cat) => (!cat.ownerOnly || isOwner) && categories.includes(cat.id)
   );
   const currentCategory = visibleCategories.find((c) => c.id === activeCategory);
+  const visibleTabs = (currentCategory?.tabs || []).filter((tab) => !tab.feature || features[tab.feature]);
 
   return (
     <div>
@@ -95,12 +103,12 @@ export function NavTabs({
       </nav>
 
       {/* Sub-tab row — only rendered when the active category has tabs */}
-      {currentCategory && currentCategory.tabs.length > 0 && (
+      {currentCategory && visibleTabs.length > 0 && (
         <nav style={{
           display: 'flex', gap: 2, borderBottom: '1px solid var(--border)',
           padding: '0 24px', background: '#fafbfc'
         }}>
-          {currentCategory.tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const isActive = tab.id === activeTab;
             return (
               <button
