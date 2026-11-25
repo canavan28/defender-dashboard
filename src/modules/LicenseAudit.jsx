@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MetricCard } from '../components/MetricCard';
 
 // Minimal CSV parser handling quoted fields with embedded commas. No new
 // npm dependency needed for a format this simple. Returns raw row arrays —
@@ -166,16 +165,98 @@ const MAIN_TABLE_KEYS = ['datto_rmm', 'sentinelone', 'saas_protect', 'knowbe4'];
 
 const SOURCE_KEYS = Object.keys(SOURCES);
 
-function DiscrepancyCell({ consumedValue, contractedValue }) {
-  if (consumedValue == null) {
-    return <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>—</span>;
-  }
-  const diff = consumedValue - contractedValue;
-  const color = diff > 0 ? 'var(--red)' : diff < 0 ? 'var(--amber)' : 'var(--ink3)';
+// ── Visual language ──────────────────────────────────────────────────────────
+// Clean white table: matching numbers are plain grey text; only numbers that
+// don't match get a small colored pill with the difference beside them.
+// Color says what to DO about it (confirmed with Matt — "over/under" scheme):
+//   over        red    using more than billed → bill them
+//   under       amber  billed for more than used → check / adjust
+//   opportunity blue   ACP usage with no ACP contract → sell it
+//   mismatch    red    Vigilance on/off doesn't match the contract
+const PILL_TONES = {
+  over:        { background: 'var(--red-soft)',   color: '#b91c1c' },
+  under:       { background: 'var(--amber-soft)', color: '#92400e' },
+  opportunity: { background: 'var(--blue-soft)',  color: 'var(--blue)' },
+  mismatch:    { background: 'var(--red-soft)',   color: '#b91c1c' },
+};
+
+const LEGEND = [
+  { tone: 'over',        sample: '+3', text: 'Over contract — using more than billed' },
+  { tone: 'under',       sample: '−2', text: 'Under contract — billed for more than used' },
+  { tone: 'opportunity', sample: '+18', text: 'Sales opportunity (ACP)' },
+];
+
+function signed(n) {
+  return n > 0 ? `+${n}` : `−${Math.abs(n)}`;
+}
+
+function Pill({ tone, children, diff }) {
   return (
-    <span className="it-mono" style={{ fontSize: 12, color, fontWeight: diff !== 0 ? 600 : 400 }}>
-      {consumedValue}{diff !== 0 && ` (${diff > 0 ? '+' : ''}${diff})`}
+    <span className="it-mono" style={{
+      ...PILL_TONES[tone],
+      display: 'inline-flex', alignItems: 'baseline', gap: 5,
+      padding: '2px 9px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap'
+    }}>
+      {children}
+      {diff != null && <span style={{ fontSize: 11, fontWeight: 400 }}>{signed(diff)}</span>}
     </span>
+  );
+}
+
+function Plain({ children }) {
+  return <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink3)' }}>{children}</span>;
+}
+
+function NoData() {
+  return <span className="it-mono" style={{ fontSize: 12, color: '#cbd5e1' }}>—</span>;
+}
+
+// RMM / S1 / SaaS Protect / KB4 cell: consumed count, pill if it differs.
+function SourceCell({ consumedValue, discrepancy }) {
+  if (consumedValue == null) return <NoData />;
+  if (!discrepancy) return <Plain>{consumedValue}</Plain>;
+  return <Pill tone={discrepancy > 0 ? 'over' : 'under'} diff={discrepancy}>{consumedValue}</Pill>;
+}
+
+function VigilanceCell({ row }) {
+  if (row.hasConsumedVigilance == null) return <NoData />;
+  if (row.vigilanceMismatch) return <Pill tone="mismatch">Mismatch</Pill>;
+  return <Plain>Aligned</Plain>;
+}
+
+function ArchiveCell({ row }) {
+  if (row.archivedSeats == null) return <NoData />;
+  if (row.archiveOverage > 0) return <Pill tone="over" diff={row.archiveOverage}>{row.archivedSeats}</Pill>;
+  return <Plain>{row.archivedSeats}</Plain>;
+}
+
+function AcpCell({ row }) {
+  if (row.billableUsers == null) return <NoData />;
+  if (row.acpOpportunity > 0) return <Pill tone="opportunity" diff={row.acpOpportunity}>{row.billableUsers}</Pill>;
+  return <Plain>{row.billableUsers}</Plain>;
+}
+
+function PanelSection({ title, children }) {
+  return (
+    <div>
+      <div className="it-eyebrow" style={{ marginBottom: 6 }}>{title}</div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function PanelRow({ label, note, children }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+      padding: '8px 0', borderTop: '1px solid var(--border)'
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink2)' }}>{label}</div>
+        {note && <div style={{ fontSize: 11, color: 'var(--ink4)', marginTop: 1 }}>{note}</div>}
+      </div>
+      <div style={{ flexShrink: 0 }}>{children}</div>
+    </div>
   );
 }
 
@@ -193,26 +274,26 @@ const CARD_FILTERS = {
   acp:          { label: 'ACP opportunities',          test: (r) => r.acpOpportunity > 0 },
 };
 
-// Wraps a MetricCard so it can be clicked as a filter, with a blue outline
-// while it's the active filter.
-function FilterCard({ active, onClick, children }) {
+// Overview card that doubles as a filter. Plain white; blue outline when it's
+// the active filter.
+function FilterCard({ label, count, problemText, active, onClick }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
       onClick={onClick}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       title={active ? 'Click to clear this filter' : 'Click to show only these clients'}
       style={{
-        cursor: 'pointer',
-        borderRadius: 12,
-        outline: active ? '2px solid var(--blue)' : '2px solid transparent',
-        outlineOffset: 2,
-        transition: 'outline-color 120ms',
+        textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
+        background: 'white', borderRadius: 12, padding: active ? '11px 13px' : '12px 14px',
+        border: active ? '2px solid var(--blue)' : '1px solid var(--border)',
+        display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0
       }}
     >
-      {children}
-    </div>
+      <span className="it-eyebrow" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+      <span style={{ fontSize: 24, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>{count}</span>
+      <span style={{ fontSize: 11.5, color: count > 0 ? 'var(--ink3)' : 'var(--green)' }}>
+        {count > 0 ? problemText : 'All aligned'}
+      </span>
+    </button>
   );
 }
 
@@ -223,8 +304,8 @@ function FilterCard({ active, onClick, children }) {
 // ("—") always sort to the bottom, in either direction.
 const SORT_COLUMNS = {
   name:        { label: 'CLIENT',    align: 'left',  firstDir: 'asc',  value: (r) => (r.companyName || '').toLowerCase() },
-  users:       { label: 'USERS',     align: 'right', firstDir: 'desc', value: (r) => r.totalContractedUsers },
-  devices:     { label: 'DEVICES',   align: 'right', firstDir: 'desc', value: (r) => r.totalContractedDevices },
+  users:       { label: 'CONTRACTED USERS',     align: 'right', firstDir: 'desc', value: (r) => r.totalContractedUsers },
+  devices:     { label: 'CONTRACTED DEVICES',   align: 'right', firstDir: 'desc', value: (r) => r.totalContractedDevices },
   datto_rmm:   { label: 'RMM',       align: 'right', firstDir: 'desc', value: (r) => r.perSource.datto_rmm.discrepancy },
   sentinelone: { label: 'S1',        align: 'right', firstDir: 'desc', value: (r) => r.perSource.sentinelone.discrepancy },
   saas_protect:{ label: 'SAAS PROTECT', align: 'right', firstDir: 'desc', value: (r) => r.perSource.saas_protect.discrepancy },
@@ -443,34 +524,30 @@ export function LicenseAudit({ licenseAudit }) {
 
       {/* Overview cards — one per software type. Click one to filter the
           client table down to just those clients. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 12 }}>
-        {MAIN_TABLE_KEYS.map((key) => (
-          <FilterCard key={key} active={cardFilter === key} onClick={() => toggleCardFilter(key)}>
-            <MetricCard
-              eyebrow={SOURCES[key].shortLabel}
-              value={overageCounts[key]}
-              foot={overageCounts[key] > 0 ? 'Discrepancies' : 'All aligned'}
-              footTone={overageCounts[key] > 0 ? 'neg' : 'pos'} />
-          </FilterCard>
-        ))}
-        <FilterCard active={cardFilter === 'vigilance'} onClick={() => toggleCardFilter('vigilance')}>
-          <MetricCard eyebrow="Vigilance"
-            value={vigilanceMismatchCount}
-            foot={vigilanceMismatchCount > 0 ? 'Mismatched' : 'All aligned'}
-            footTone={vigilanceMismatchCount > 0 ? 'neg' : 'pos'} />
-        </FilterCard>
-        <FilterCard active={cardFilter === 'archive'} onClick={() => toggleCardFilter('archive')}>
-          <MetricCard eyebrow="Archive"
-            value={archiveOverageCount}
-            foot={archiveOverageCount > 0 ? 'Likely unbilled' : 'All aligned'}
-            footTone={archiveOverageCount > 0 ? 'neg' : 'pos'} />
-        </FilterCard>
-        <FilterCard active={cardFilter === 'acp'} onClick={() => toggleCardFilter('acp')}>
-          <MetricCard eyebrow="ACP opportunity"
-            value={acpOpportunityCount}
-            foot={acpOpportunityCount > 0 ? 'Not yet selling' : 'Fully captured'}
-            footTone={acpOpportunityCount > 0 ? 'neg' : 'pos'} />
-        </FilterCard>
+      <div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10 }}>
+          {MAIN_TABLE_KEYS.map((key) => (
+            <FilterCard key={key}
+              label={SOURCES[key].shortLabel}
+              count={overageCounts[key]}
+              problemText="Discrepancies"
+              active={cardFilter === key}
+              onClick={() => toggleCardFilter(key)} />
+          ))}
+          <FilterCard label="Vigilance" count={vigilanceMismatchCount} problemText="Mismatched"
+            active={cardFilter === 'vigilance'} onClick={() => toggleCardFilter('vigilance')} />
+          <FilterCard label="Archive" count={archiveOverageCount} problemText="Likely unbilled"
+            active={cardFilter === 'archive'} onClick={() => toggleCardFilter('archive')} />
+          <FilterCard label="ACP opportunity" count={acpOpportunityCount} problemText="Not yet selling"
+            active={cardFilter === 'acp'} onClick={() => toggleCardFilter('acp')} />
+        </div>
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10 }}>
+          {LEGEND.map((l) => (
+            <span key={l.tone} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--ink3)' }}>
+              <Pill tone={l.tone}>{l.sample}</Pill>{l.text}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Upload toolbar — compact, secondary to the overview */}
@@ -559,6 +636,8 @@ export function LicenseAudit({ licenseAudit }) {
         </div>
       )}
 
+      <style>{`.la-row:hover td { background: var(--slate-soft); }`}</style>
+
       {/* Unified spreadsheet — every client, every source, one table */}
       <div className="it-card" style={{ padding: 20, overflowX: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -646,48 +725,25 @@ export function LicenseAudit({ licenseAudit }) {
               {visibleRows.map((row) => (
                 <tr
                   key={row.companyId}
+                  className="la-row"
                   onClick={() => setSelectedCompanyId(row.companyId)}
                   style={{
                     cursor: 'pointer',
-                    background: row.anyDiscrepancy ? 'var(--red-soft)' : 'transparent',
-                    borderBottom: '1px solid var(--border)'
+                    borderTop: '1px solid var(--border)',
+                    background: row.companyId === selectedCompanyId ? 'var(--blue-soft)' : undefined
                   }}
                 >
-                  <td style={{ padding: '10px 12px', fontSize: 13 }}>{row.companyName}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right' }} className="it-mono">{row.totalContractedUsers}</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right' }} className="it-mono">{row.totalContractedDevices}</td>
+                  <td style={{ padding: '11px 12px', fontSize: 13, color: 'var(--ink)' }}>{row.companyName}</td>
+                  <td style={{ padding: '11px 12px', textAlign: 'right' }}><Plain>{row.totalContractedUsers}</Plain></td>
+                  <td style={{ padding: '11px 12px', textAlign: 'right' }}><Plain>{row.totalContractedDevices}</Plain></td>
                   {MAIN_TABLE_KEYS.map((key) => (
-                    <td key={key} style={{ padding: '10px 12px', textAlign: 'right' }}>
-                      <DiscrepancyCell consumedValue={row.perSource[key].consumedValue} contractedValue={row.perSource[key].contractedValue} />
+                    <td key={key} style={{ padding: '11px 12px', textAlign: 'right' }}>
+                      <SourceCell consumedValue={row.perSource[key].consumedValue} discrepancy={row.perSource[key].discrepancy} />
                     </td>
                   ))}
-                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                    {row.hasConsumedVigilance == null ? (
-                      <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>—</span>
-                    ) : (
-                      <span className="it-mono" style={{ fontSize: 12, color: row.vigilanceMismatch ? 'var(--red)' : 'var(--green)', fontWeight: row.vigilanceMismatch ? 600 : 400 }}>
-                        {row.vigilanceMismatch ? 'Mismatch' : 'Aligned'}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                    {row.archivedSeats == null ? (
-                      <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>—</span>
-                    ) : (
-                      <span className="it-mono" style={{ fontSize: 12, color: row.archiveOverage > 0 ? 'var(--red)' : 'var(--ink3)', fontWeight: row.archiveOverage > 0 ? 600 : 400 }}>
-                        {row.archivedSeats}{row.archiveOverage > 0 && ` (+${row.archiveOverage})`}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                    {row.billableUsers == null ? (
-                      <span className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>—</span>
-                    ) : (
-                      <span className="it-mono" style={{ fontSize: 12, color: row.acpOpportunity > 0 ? 'var(--red)' : 'var(--ink3)', fontWeight: row.acpOpportunity > 0 ? 600 : 400 }}>
-                        {row.billableUsers}{row.acpOpportunity > 0 && ` (+${row.acpOpportunity})`}
-                      </span>
-                    )}
-                  </td>
+                  <td style={{ padding: '11px 12px', textAlign: 'right' }}><VigilanceCell row={row} /></td>
+                  <td style={{ padding: '11px 12px', textAlign: 'right' }}><ArchiveCell row={row} /></td>
+                  <td style={{ padding: '11px 12px', textAlign: 'right' }}><AcpCell row={row} /></td>
                 </tr>
               ))}
             </tbody>
@@ -695,95 +751,78 @@ export function LicenseAudit({ licenseAudit }) {
         )}
       </div>
 
-      {/* Slide-out client detail panel */}
+      {/* Slide-out client detail panel — same clean treatment as the table:
+          plain grey values, pills only where something doesn't match. */}
       {selected && (
         <>
           <div
             onClick={() => setSelectedCompanyId(null)}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 40 }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.12)', zIndex: 40 }}
           />
           <div style={{
-            position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '90vw',
-            background: 'white', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', zIndex: 50,
-            padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16
+            position: 'fixed', top: 0, right: 0, bottom: 0, width: 440, maxWidth: '92vw',
+            background: 'white', borderLeft: '1px solid var(--border)',
+            boxShadow: '-8px 0 24px rgba(15, 23, 42, 0.06)', zIndex: 50,
+            padding: '24px 28px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div className="it-section-title">{selected.companyName}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{selected.companyName}</div>
+                <div className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)', marginTop: 3 }}>
+                  {selected.totalContractedUsers} contracted users · {selected.totalContractedDevices} contracted devices
+                </div>
+              </div>
               <button
                 onClick={() => setSelectedCompanyId(null)}
-                className="it-mono"
-                style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink4)', fontSize: 13 }}
+                aria-label="Close"
+                style={{
+                  background: 'none', border: '1px solid var(--border)', borderRadius: 8,
+                  width: 30, height: 30, cursor: 'pointer', color: 'var(--ink3)', fontSize: 14, lineHeight: 1
+                }}
               >
-                Close
+                ✕
               </button>
             </div>
 
-            <div>
-              <div className="it-eyebrow" style={{ marginBottom: 8 }}>Contracted</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--ink3)' }}>Full users</span><span className="it-mono">{selected.fullUsers}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--ink3)' }}>Partial users</span><span className="it-mono">{selected.partialUsers}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--ink3)' }}>Extra devices</span><span className="it-mono">{selected.extraDevices}{selected.extraDevicesLapsed && ' (lapsed)'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--ink3)' }}>Servers</span><span className="it-mono">{selected.servers}</span>
-                </div>
-              </div>
-            </div>
+            <PanelSection title="Contracted (AutoTask)">
+              <PanelRow label="Full users"><Plain>{selected.fullUsers}</Plain></PanelRow>
+              <PanelRow label="Partial users"><Plain>{selected.partialUsers}</Plain></PanelRow>
+              <PanelRow label="Extra devices">
+                {selected.extraDevicesLapsed
+                  ? <Pill tone="under">{selected.extraDevices} · lapsed</Pill>
+                  : <Plain>{selected.extraDevices}</Plain>}
+              </PanelRow>
+              <PanelRow label="Servers"><Plain>{selected.servers}</Plain></PanelRow>
+            </PanelSection>
 
-            <div>
-              <div className="it-eyebrow" style={{ marginBottom: 8 }}>Consumed, by source</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {MAIN_TABLE_KEYS.map((key) => {
-                  const s = selected.perSource[key];
-                  return (
-                    <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                      <span style={{ color: 'var(--ink3)' }}>{SOURCES[key].label}</span>
-                      <span className="it-mono" style={{ color: s.discrepancy ? 'var(--red)' : 'var(--ink)' }}>
-                        {s.consumedValue != null ? s.consumedValue : '—'}
-                        {s.discrepancy ? ` (${s.discrepancy > 0 ? '+' : ''}${s.discrepancy} vs ${s.contractedValue})` : ''}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <PanelSection title="Consumed, by source">
+              {MAIN_TABLE_KEYS.map((key) => {
+                const src = selected.perSource[key];
+                return (
+                  <PanelRow key={key} label={SOURCES[key].label}
+                    note={src.consumedValue != null && src.discrepancy
+                      ? `vs ${src.contractedValue} ${SOURCES[key].contractedLabel.toLowerCase()}`
+                      : null}>
+                    <SourceCell consumedValue={src.consumedValue} discrepancy={src.discrepancy} />
+                  </PanelRow>
+                );
+              })}
+            </PanelSection>
 
-            <div>
-              <div className="it-eyebrow" style={{ marginBottom: 8 }}>Add-ons</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--ink3)' }}>Vigilance</span>
-                  <span className="it-mono" style={{ color: selected.vigilanceMismatch ? 'var(--red)' : 'var(--ink)' }}>
-                    {selected.hasContractedVigilance ? `Contracted (${selected.addons.vigilance.units})` : 'Not contracted'}
-                    {selected.hasConsumedVigilance != null && ` · ${selected.hasConsumedVigilance ? 'Enabled in S1' : 'Not enabled in S1'}`}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--ink3)' }}>vPenTest</span>
-                  <span className="it-mono">{selected.addons?.vPenTest?.units || 0}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--ink3)' }}>ACP</span>
-                  <span className="it-mono" style={{ color: selected.acpOpportunity > 0 ? 'var(--red)' : 'var(--ink)' }}>
-                    {selected.contractedAcp} contracted
-                    {selected.billableUsers != null && ` · ${selected.billableUsers} billable in SaaS Alerts`}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--ink3)' }}>Long Term Archive</span>
-                  <span className="it-mono" style={{ color: selected.archiveOverage > 0 ? 'var(--red)' : 'var(--ink)' }}>
-                    {selected.contractedArchive} contracted
-                    {selected.archivedSeats != null && ` · ${selected.archivedSeats} archived seats`}
-                  </span>
-                </div>
-              </div>
-            </div>
+            <PanelSection title="Add-ons">
+              <PanelRow label="Vigilance"
+                note={`${selected.hasContractedVigilance ? `Contracted (${selected.addons.vigilance.units})` : 'Not contracted'}${
+                  selected.hasConsumedVigilance != null ? ` · ${selected.hasConsumedVigilance ? 'on' : 'off'} in S1` : ''}`}>
+                <VigilanceCell row={selected} />
+              </PanelRow>
+              <PanelRow label="Long Term Archive" note={`${selected.contractedArchive} contracted · archived seats in SaaS Protect`}>
+                <ArchiveCell row={selected} />
+              </PanelRow>
+              <PanelRow label="ACP" note={`${selected.contractedAcp} contracted · billable users in SaaS Alerts`}>
+                <AcpCell row={selected} />
+              </PanelRow>
+              <PanelRow label="vPenTest"><Plain>{selected.addons?.vPenTest?.units || 0}</Plain></PanelRow>
+            </PanelSection>
           </div>
         </>
       )}
