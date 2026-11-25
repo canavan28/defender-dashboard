@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { createApi } from '../utils/api';
 
 export function useLicenseAudit(getToken) {
@@ -9,7 +9,15 @@ export function useLicenseAudit(getToken) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
 
-  const api = createApi(getToken);
+  // Contract-data rebuild state (from GET /api/license-audit/status):
+  // { builtAt, isBuilding, status, startedAt, finishedAt, error, trigger }
+  const [rebuild, setRebuild] = useState(null);
+  const pollTimer = useRef(null);
+  const watchingBuild = useRef(false); // true while we're waiting on a rebuild
+
+  // Memoized — an api object rebuilt on every render is the same bug class
+  // as the runaway re-render loop fixed earlier in App.jsx.
+  const api = useMemo(() => createApi(getToken), [getToken]);
 
   const loadContracted = useCallback(async () => {
     setLoading(true);
@@ -22,7 +30,7 @@ export function useLicenseAudit(getToken) {
     } finally {
       setLoading(false);
     }
-  }, [getToken]);
+  }, [api]);
 
   const loadCompanies = useCallback(async () => {
     try {
@@ -31,7 +39,7 @@ export function useLicenseAudit(getToken) {
     } catch (err) {
       setError(err.message);
     }
-  }, [getToken]);
+  }, [api]);
 
   const loadConsumed = useCallback(async (source) => {
     try {
@@ -40,7 +48,7 @@ export function useLicenseAudit(getToken) {
     } catch (err) {
       setError(err.message);
     }
-  }, [getToken]);
+  }, [api]);
 
   // rows: [{ name, devices }] already parsed client-side from whatever
   // CSV format the source uses — backend just does matching, no CSV
@@ -58,7 +66,7 @@ export function useLicenseAudit(getToken) {
     } finally {
       setUploading(false);
     }
-  }, [getToken, loadConsumed]);
+  }, [api, loadConsumed]);
 
   const mapConsumed = useCallback(async (source, rawName, companyId) => {
     try {
@@ -68,7 +76,7 @@ export function useLicenseAudit(getToken) {
       setError(err.message);
       throw err;
     }
-  }, [getToken, loadConsumed]);
+  }, [api, loadConsumed]);
 
   const ignoreConsumed = useCallback(async (source, rawName) => {
     try {
@@ -78,11 +86,57 @@ export function useLicenseAudit(getToken) {
       setError(err.message);
       throw err;
     }
-  }, [getToken, loadConsumed]);
+  }, [api, loadConsumed]);
+
+  // ── Contract-data rebuild ─────────────────────────────────────────────
+  // A full rebuild takes several minutes, so the backend runs it in the
+  // background. Poll /status every 10 seconds until it finishes, then
+  // reload the contracted numbers.
+  const stopPolling = () => {
+    if (pollTimer.current) {
+      clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+    }
+  };
+
+  const pollStatus = useCallback(async () => {
+    stopPolling();
+    try {
+      const status = await api.licenseAudit.contractedStatus();
+      setRebuild(status);
+      if (status.isBuilding) {
+        watchingBuild.current = true;
+        pollTimer.current = setTimeout(pollStatus, 10000);
+      } else if (watchingBuild.current) {
+        // A rebuild we were waiting on just finished — load the new numbers.
+        watchingBuild.current = false;
+        if (status.status === 'done') await loadContracted();
+      }
+      return status;
+    } catch (err) {
+      setError(err.message);
+      return null;
+    }
+  }, [api, loadContracted]);
+
+  const startRebuild = useCallback(async () => {
+    setError(null);
+    try {
+      const res = await api.licenseAudit.contractedRefresh();
+      setRebuild((prev) => ({ ...(prev || {}), ...res, isBuilding: true }));
+      watchingBuild.current = true;
+      pollTimer.current = setTimeout(pollStatus, 10000);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [api, pollStatus]);
+
+  useEffect(() => stopPolling, []);
 
   return {
     contracted, companies, consumed, loading, uploading, error,
     loadContracted, loadCompanies, loadConsumed,
-    uploadConsumed, mapConsumed, ignoreConsumed
+    uploadConsumed, mapConsumed, ignoreConsumed,
+    rebuild, pollStatus, startRebuild
   };
 }

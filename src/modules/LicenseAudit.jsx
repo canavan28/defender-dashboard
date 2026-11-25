@@ -179,11 +179,119 @@ function DiscrepancyCell({ consumedValue, contractedValue }) {
   );
 }
 
+// ── Card filters ─────────────────────────────────────────────────────────────
+// Each overview card doubles as a filter for the client table. Clicking a
+// card shows only the clients with that problem; clicking it again (or
+// "Clear filters") shows everyone.
+const CARD_FILTERS = {
+  datto_rmm:    { label: 'RMM discrepancies',          test: (r) => !!r.perSource.datto_rmm.discrepancy },
+  sentinelone:  { label: 'S1 discrepancies',           test: (r) => !!r.perSource.sentinelone.discrepancy },
+  saas_protect: { label: 'SaaS Protect discrepancies', test: (r) => !!r.perSource.saas_protect.discrepancy },
+  knowbe4:      { label: 'KB4 discrepancies',          test: (r) => !!r.perSource.knowbe4.discrepancy },
+  vigilance:    { label: 'Vigilance mismatches',       test: (r) => r.vigilanceMismatch },
+  archive:      { label: 'Archive overages',           test: (r) => r.archiveOverage > 0 },
+  acp:          { label: 'ACP opportunities',          test: (r) => r.acpOpportunity > 0 },
+};
+
+// Wraps a MetricCard so it can be clicked as a filter, with a blue outline
+// while it's the active filter.
+function FilterCard({ active, onClick, children }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      title={active ? 'Click to clear this filter' : 'Click to show only these clients'}
+      style={{
+        cursor: 'pointer',
+        borderRadius: 12,
+        outline: active ? '2px solid var(--blue)' : '2px solid transparent',
+        outlineOffset: 2,
+        transition: 'outline-color 120ms',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ── Sorting ─────────────────────────────────────────────────────────────────
+// Every column is sortable. Software columns sort by the size of the
+// discrepancy (biggest overage first on the first click), not the raw count,
+// since that's what the audit is about. Clients with no data for a column
+// ("—") always sort to the bottom, in either direction.
+const SORT_COLUMNS = {
+  name:        { label: 'CLIENT',    align: 'left',  firstDir: 'asc',  value: (r) => (r.companyName || '').toLowerCase() },
+  users:       { label: 'USERS',     align: 'right', firstDir: 'desc', value: (r) => r.totalContractedUsers },
+  devices:     { label: 'DEVICES',   align: 'right', firstDir: 'desc', value: (r) => r.totalContractedDevices },
+  datto_rmm:   { label: 'RMM',       align: 'right', firstDir: 'desc', value: (r) => r.perSource.datto_rmm.discrepancy },
+  sentinelone: { label: 'S1',        align: 'right', firstDir: 'desc', value: (r) => r.perSource.sentinelone.discrepancy },
+  saas_protect:{ label: 'SAAS PROTECT', align: 'right', firstDir: 'desc', value: (r) => r.perSource.saas_protect.discrepancy },
+  knowbe4:     { label: 'KB4',       align: 'right', firstDir: 'desc', value: (r) => r.perSource.knowbe4.discrepancy },
+  vigilance:   { label: 'VIGILANCE', align: 'right', firstDir: 'desc', value: (r) => (r.hasConsumedVigilance == null ? null : r.vigilanceMismatch ? 1 : 0) },
+  archive:     { label: 'ARCHIVE',   align: 'right', firstDir: 'desc', value: (r) => r.archiveOverage },
+  acp:         { label: 'ACP OPP.',  align: 'right', firstDir: 'desc', value: (r) => r.acpOpportunity },
+};
+const SORT_COLUMN_ORDER = ['name', 'users', 'devices', 'datto_rmm', 'sentinelone', 'saas_protect', 'knowbe4', 'vigilance', 'archive', 'acp'];
+
+function compareRows(a, b, key, dir) {
+  const va = SORT_COLUMNS[key].value(a);
+  const vb = SORT_COLUMNS[key].value(b);
+  if (va == null && vb == null) return 0;
+  if (va == null) return 1;   // no data → bottom, regardless of direction
+  if (vb == null) return -1;
+  let cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+  if (dir === 'desc') cmp = -cmp;
+  return cmp;
+}
+
+// Contract numbers (users, devices, add-ons) come from a saved copy that
+// rebuilds automatically every night, or on demand with this button. The
+// top-bar "Sync Data" button does NOT refresh it — it only refreshes tickets.
+const STALE_AFTER_MS = 36 * 60 * 60 * 1000; // older than a missed nightly rebuild
+
+function ContractDataControl({ rebuild, builtAt, onRebuild }) {
+  const building = !!rebuild?.isBuilding;
+  const stale = builtAt && Date.now() - new Date(builtAt).getTime() > STALE_AFTER_MS;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+      <button
+        onClick={onRebuild}
+        disabled={building}
+        className="it-mono"
+        style={{
+          padding: '8px 16px', borderRadius: 8,
+          border: '1px solid var(--border-strong)',
+          background: building ? 'var(--slate-soft)' : 'white',
+          color: 'var(--ink)', fontSize: 12.5,
+          cursor: building ? 'default' : 'pointer'
+        }}
+      >
+        {building ? 'Rebuilding contract data…' : 'Rebuild contract data'}
+      </button>
+      <span className="it-mono" style={{ fontSize: 11, color: stale ? 'var(--amber)' : 'var(--ink4)' }}>
+        {building
+          ? 'Takes several minutes — you can keep working'
+          : builtAt
+            ? `Contract data from ${new Date(builtAt).toLocaleString()}${stale ? ' · out of date' : ''}`
+            : 'Contract data not built yet'}
+      </span>
+      {rebuild?.status === 'error' && !building && (
+        <span className="it-mono" style={{ fontSize: 11, color: 'var(--red)' }}>
+          Last rebuild failed: {rebuild.error}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function LicenseAudit({ licenseAudit }) {
   const {
     contracted, companies, consumed, loading, uploading, error,
     loadContracted, loadCompanies, loadConsumed,
-    uploadConsumed, mapConsumed, ignoreConsumed
+    uploadConsumed, mapConsumed, ignoreConsumed,
+    rebuild, pollStatus, startRebuild
   } = licenseAudit;
 
   const [uploadSource, setUploadSource] = useState('datto_rmm');
@@ -191,9 +299,14 @@ export function LicenseAudit({ licenseAudit }) {
   const [mappingChoice, setMappingChoice] = useState({});
   const [showReconcile, setShowReconcile] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [cardFilter, setCardFilter] = useState(null); // key of CARD_FILTERS, or null
+  const [sortKey, setSortKey] = useState(null);       // null = default (problems first, then A–Z)
+  const [sortDir, setSortDir] = useState('desc');
 
   useEffect(() => {
     loadContracted();
+    pollStatus(); // shows "last updated", and picks up a rebuild already in progress
     loadCompanies();
     SOURCE_KEYS.forEach((key) => loadConsumed(key)); // all sources, including saas_alerts for the ACP section below
   }, []);
@@ -263,8 +376,38 @@ export function LicenseAudit({ licenseAudit }) {
         billableUsers, contractedAcp, acpOpportunity,
         anyDiscrepancy
       };
-    }).sort((a, b) => (b.anyDiscrepancy ? 1 : 0) - (a.anyDiscrepancy ? 1 : 0));
+    });
   }, [clients, consumed]);
+
+  // What the table actually shows: search + card filter + sort.
+  const visibleRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let rows = tableRows;
+    if (q) rows = rows.filter((r) => (r.companyName || '').toLowerCase().includes(q));
+    if (cardFilter) rows = rows.filter(CARD_FILTERS[cardFilter].test);
+    const sorted = [...rows];
+    if (sortKey) {
+      sorted.sort((a, b) => compareRows(a, b, sortKey, sortDir) || compareRows(a, b, 'name', 'asc'));
+    } else {
+      // Default: clients with any problem first, then A–Z
+      sorted.sort((a, b) => (b.anyDiscrepancy ? 1 : 0) - (a.anyDiscrepancy ? 1 : 0) || compareRows(a, b, 'name', 'asc'));
+    }
+    return sorted;
+  }, [tableRows, search, cardFilter, sortKey, sortDir]);
+
+  const toggleCardFilter = (key) => setCardFilter((current) => (current === key ? null : key));
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(SORT_COLUMNS[key].firstDir);
+    }
+  };
+
+  const clearAll = () => { setSearch(''); setCardFilter(null); setSortKey(null); };
+  const anyFilterActive = !!search.trim() || !!cardFilter || !!sortKey;
 
   // Overview counts, one per software type, for the top cards.
   const overageCounts = MAIN_TABLE_KEYS.reduce((acc, key) => {
@@ -284,9 +427,12 @@ export function LicenseAudit({ licenseAudit }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <div className="it-section-title">License Audit</div>
-        <div className="it-section-sub">Contracted vs. consumed, across every tracked software source</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+        <div>
+          <div className="it-section-title">License Audit</div>
+          <div className="it-section-sub">Contracted vs. consumed, across every tracked software source</div>
+        </div>
+        <ContractDataControl rebuild={rebuild} builtAt={rebuild?.builtAt ?? contracted?.builtAt} onRebuild={startRebuild} />
       </div>
 
       {error && (
@@ -295,27 +441,36 @@ export function LicenseAudit({ licenseAudit }) {
         </div>
       )}
 
-      {/* Overview cards — one per software type */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12 }}>
+      {/* Overview cards — one per software type. Click one to filter the
+          client table down to just those clients. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 12 }}>
         {MAIN_TABLE_KEYS.map((key) => (
-          <MetricCard key={key}
-            eyebrow={SOURCES[key].shortLabel}
-            value={overageCounts[key]}
-            foot={overageCounts[key] > 0 ? 'Discrepancies' : 'All aligned'}
-            footTone={overageCounts[key] > 0 ? 'neg' : 'pos'} />
+          <FilterCard key={key} active={cardFilter === key} onClick={() => toggleCardFilter(key)}>
+            <MetricCard
+              eyebrow={SOURCES[key].shortLabel}
+              value={overageCounts[key]}
+              foot={overageCounts[key] > 0 ? 'Discrepancies' : 'All aligned'}
+              footTone={overageCounts[key] > 0 ? 'neg' : 'pos'} />
+          </FilterCard>
         ))}
-        <MetricCard eyebrow="Vigilance"
-          value={vigilanceMismatchCount}
-          foot={vigilanceMismatchCount > 0 ? 'Mismatched' : 'All aligned'}
-          footTone={vigilanceMismatchCount > 0 ? 'neg' : 'pos'} />
-        <MetricCard eyebrow="Archive"
-          value={archiveOverageCount}
-          foot={archiveOverageCount > 0 ? 'Likely unbilled' : 'All aligned'}
-          footTone={archiveOverageCount > 0 ? 'neg' : 'pos'} />
-        <MetricCard eyebrow="ACP opportunity"
-          value={acpOpportunityCount}
-          foot={acpOpportunityCount > 0 ? 'Not yet selling' : 'Fully captured'}
-          footTone={acpOpportunityCount > 0 ? 'neg' : 'pos'} />
+        <FilterCard active={cardFilter === 'vigilance'} onClick={() => toggleCardFilter('vigilance')}>
+          <MetricCard eyebrow="Vigilance"
+            value={vigilanceMismatchCount}
+            foot={vigilanceMismatchCount > 0 ? 'Mismatched' : 'All aligned'}
+            footTone={vigilanceMismatchCount > 0 ? 'neg' : 'pos'} />
+        </FilterCard>
+        <FilterCard active={cardFilter === 'archive'} onClick={() => toggleCardFilter('archive')}>
+          <MetricCard eyebrow="Archive"
+            value={archiveOverageCount}
+            foot={archiveOverageCount > 0 ? 'Likely unbilled' : 'All aligned'}
+            footTone={archiveOverageCount > 0 ? 'neg' : 'pos'} />
+        </FilterCard>
+        <FilterCard active={cardFilter === 'acp'} onClick={() => toggleCardFilter('acp')}>
+          <MetricCard eyebrow="ACP opportunity"
+            value={acpOpportunityCount}
+            foot={acpOpportunityCount > 0 ? 'Not yet selling' : 'Fully captured'}
+            footTone={acpOpportunityCount > 0 ? 'neg' : 'pos'} />
+        </FilterCard>
       </div>
 
       {/* Upload toolbar — compact, secondary to the overview */}
@@ -406,30 +561,89 @@ export function LicenseAudit({ licenseAudit }) {
 
       {/* Unified spreadsheet — every client, every source, one table */}
       <div className="it-card" style={{ padding: 20, overflowX: 'auto' }}>
-        <div className="it-section-title" style={{ marginBottom: 12 }}>All clients</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+            <div className="it-section-title">All clients</div>
+            {tableRows.length > 0 && (
+              <span className="it-mono" style={{ fontSize: 11.5, color: 'var(--ink4)' }}>
+                {visibleRows.length === tableRows.length
+                  ? `${tableRows.length} clients`
+                  : `Showing ${visibleRows.length} of ${tableRows.length}`}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {cardFilter && (
+              <span className="it-mono" style={{
+                fontSize: 11.5, padding: '4px 10px', borderRadius: 999,
+                background: 'var(--blue-soft, #eaf2fb)', color: 'var(--blue)'
+              }}>
+                {CARD_FILTERS[cardFilter].label}
+                <button
+                  onClick={() => setCardFilter(null)}
+                  title="Remove this filter"
+                  style={{ marginLeft: 6, background: 'none', border: 0, cursor: 'pointer', color: 'var(--blue)', fontSize: 12, padding: 0 }}
+                >
+                  ✕
+                </button>
+              </span>
+            )}
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search clients…"
+              style={{
+                width: 220, padding: '7px 10px', borderRadius: 6,
+                border: '1px solid var(--border-strong)', fontSize: 12.5, fontFamily: 'inherit'
+              }}
+            />
+            {anyFilterActive && (
+              <button
+                onClick={clearAll}
+                className="it-mono"
+                style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink4)', fontSize: 11.5, padding: 0 }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        </div>
         {loading && <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>Loading…</p>}
         {!loading && tableRows.length === 0 && (
           <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>No contracted data yet.</p>
         )}
-        {tableRows.length > 0 && (
+        {tableRows.length > 0 && visibleRows.length === 0 && (
+          <p className="it-mono" style={{ fontSize: 12, color: 'var(--ink4)' }}>No clients match these filters.</p>
+        )}
+        {visibleRows.length > 0 && (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th style={{ textAlign: 'left', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>CLIENT</th>
-                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>USERS</th>
-                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>DEVICES</th>
-                {MAIN_TABLE_KEYS.map((key) => (
-                  <th key={key} style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>
-                    {SOURCES[key].shortLabel.toUpperCase()}
-                  </th>
-                ))}
-                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>VIGILANCE</th>
-                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>ARCHIVE</th>
-                <th style={{ textAlign: 'right', padding: '0 12px 8px', fontSize: 11, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>ACP OPP.</th>
+                {SORT_COLUMN_ORDER.map((key) => {
+                  const col = SORT_COLUMNS[key];
+                  const active = sortKey === key;
+                  return (
+                    <th key={key} style={{ textAlign: col.align, padding: '0 12px 8px', whiteSpace: 'nowrap' }}>
+                      <button
+                        onClick={() => handleSort(key)}
+                        title="Click to sort"
+                        style={{
+                          background: 'none', border: 0, padding: 0, cursor: 'pointer',
+                          fontSize: 11, fontFamily: 'var(--mono)',
+                          color: active ? 'var(--ink)' : 'var(--ink4)',
+                          fontWeight: active ? 600 : 400
+                        }}
+                      >
+                        {col.label}{active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {tableRows.map((row) => (
+              {visibleRows.map((row) => (
                 <tr
                   key={row.companyId}
                   onClick={() => setSelectedCompanyId(row.companyId)}
